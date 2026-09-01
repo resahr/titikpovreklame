@@ -1,0 +1,46 @@
+/* ===== lapisan kolaborasi ===== */
+#collabbar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:7px 22px;
+background:var(--panel2);border-bottom:1px solid var(--line);font-size:11.5px}
+#collabbar[hidden]{display:none}
+#collabbar .who{font-family:var(--mono);color:var(--lime);font-weight:700}
+#collabbar .sep{width:1px;height:14px;background:var(--line)}
+#syncdot{width:8px;height:8px;border-radius:50%;background:var(--dim);flex:none;
+  transition:background .2s}
+#syncdot.ok{background:var(--lime)}
+#syncdot.busy{background:var(--gold);animation:pulse 1s infinite}
+#syncdot.off{background:var(--rust)}
+@keyframes pulse{50%{opacity:.35}}
+#syncmsg{color:var(--dim)}
+#syncmsg b{color:var(--ink)}
+#peers{display:flex;gap:5px;flex-wrap:wrap;margin-left:auto;align-items:center}
+.peer{font-family:var(--mono);font-size:10px;font-weight:700;padding:3px 8px;border-radius:12px;
+background:rgba(95,179,201,.16);color:var(--sky);white-space:nowrap}
+.peer.busy{background:rgba(224,161,95,.18);color:var(--gold)}
+.peer .on{opacity:.7;font-weight:400}
+
+/* gembok pada kartu daftar */
+.tag.t-lock{background:rgba(224,161,95,.2);color:var(--gold)}
+.tag.t-sync{background:rgba(95,179,201,.16);color:var(--sky)}
+
+/* peringatan titik sedang dipegang orang lain */
+#lockwarn{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-bottom:9px;padding:7px 9px;
+border:1px solid var(--gold);border-radius:4px;background:rgba(224,161,95,.09);font-size:11px;color:var(--gold)}
+#lockwarn[hidden]{display:none}
+#lockwarn .grow{flex:1}
+
+/* layar masuk */
+#gate{position:fixed;inset:0;z-index:9500;background:rgba(15,18,16,.96);
+display:flex;align-items:center;justify-content:center;padding:20px}
+#gate[hidden]{display:none}
+#gatebox{width:100%;max-width:380px;background:var(--panel);border:1px solid var(--line);
+border-radius:8px;padding:26px 24px;box-shadow:0 20px 60px rgba(0,0,0,.6)}
+#gatebox h2{margin:0 0 4px;font-size:16px}
+#gatebox .sub{font-family:var(--mono);font-size:11px;color:var(--dim);margin-bottom:20px;line-height:1.5}
+#gatebox label{display:block;font-size:10px;color:var(--dim);text-transform:uppercase;
+letter-spacing:.07em;margin-bottom:5px}
+#gatebox input{width:100%;background:var(--panel2);color:var(--ink);border:1px solid var(--line);
+border-radius:4px;padding:9px 10px;font-size:13px;font-family:Arial;margin-bottom:14px}
+#gatebox input:focus{outline:none;border-color:var(--sky)}
+#gateGo{width:100%;padding:10px;font-size:13px;font-weight:700}
+#gateMsg{font-size:11.5px;color:var(--rust);margin-top:11px;min-height:16px;line-height:1.45}
+#gateMsg.info{color:var(--dim)}
