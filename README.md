@@ -20,6 +20,7 @@ webgis-pov/
 ├── config.json             ← menyimpan API_URL (dibuat otomatis)
 ├── src/                    ← sumber lapisan kolaborasi
 │   ├── collab.js               mesin sinkronisasi
+│   ├── ekspor.js               ekspor Excel dua sheet
 │   ├── collab.css              gaya bilah status & gerbang masuk
 │   ├── collab.html             bilah status
 │   └── gate.html               layar masuk (nama + kode akses)
@@ -176,6 +177,31 @@ masukkan nama dan kode, semua editan tim langsung termuat.
 | **Muat ulang dari server** | Buang perubahan lokal yang belum terkirim, tarik ulang keadaan terbaru. (Dulu: "Kembalikan semua") |
 | **Kembalikan titik ini** | Kembalikan satu titik ke data survei asli — ikut tersinkron ke rekan |
 | **Simpan JSON / CSV / HTML** | Tetap seperti semula. Berkas HTML hasil unduhan berjalan mandiri, luring, tanpa sinkronisasi |
+| **Simpan Excel** | Baru. Berkas `.xlsx` berisi **dua sheet** — lihat di bawah |
+
+### Ekspor Excel dua sheet
+
+CSV secara format hanya bisa memuat satu tabel, jadi permintaan "sheet 2"
+diwujudkan sebagai berkas Excel sungguhan. Tombol **Simpan CSV** yang lama
+tidak diubah.
+
+**Sheet `Detail POV`** — satu baris per POV, isinya sama persis dengan tombol CSV:
+
+| id_reklame | jenis | tipe | jalan | kelurahan | kecamatan | prioritas | reklame_lat | reklame_lon | pov_ke | pov_lat | pov_lon | jarak_m | status | perlu_dicek |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+
+**Sheet `Ringkas`** — satu baris per titik reklame (2.420 baris):
+
+| id_reklame | jenis | tipe | jalan | jarak_median_m |
+|---|---|---|---|---|
+
+`jarak_median_m` adalah median jarak seluruh POV titik itu ke titik reklamenya,
+dihitung ulang otomatis setiap kali POV digeser, ditambah, atau dihapus.
+
+Titik tanpa POV dibiarkan **kosong**, bukan diisi 0 — angka 0 akan terbaca
+sebagai "POV tepat di titik reklame", padahal artinya belum ada POV sama sekali.
+
+Keduanya mengekspor **seluruh 2.420 titik**, bukan hanya yang sedang tersaring.
 
 ---
 
