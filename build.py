@@ -121,6 +121,14 @@ def main():
     html = DATASET_RE.sub(lambda mm: mm.group(1) + '\n' + mm.group(3), html, count=1)
 
     # 2 ─ gaya + markup kolaborasi
+    # SheetJS untuk ekspor .xlsx dua sheet
+    html = sub_once(
+        html,
+        '<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>',
+        '<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>\n'
+        '<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>',
+        'muat SheetJS')
+
     html = sub_once(html, '</style></head><body>',
                     '\n' + read(os.path.join(SRC, 'collab.css')) +
                     '</style></head><body>', 'sisip CSS')
@@ -132,13 +140,22 @@ def main():
                     '\n<div id="toast"></div>', 'sisip gerbang masuk')
 
     # 3 ─ kaitan di JavaScript
+    html = sub_once(
+        html,
+        '<button class="btn" id="btnCSV">Simpan CSV</button>',
+        '<button class="btn" id="btnCSV">Simpan CSV</button>\n'
+        '<button class="btn" id="btnXLSX" title="Excel dua sheet: rincian tiap POV, '
+        'dan ringkasan jarak median per titik">Simpan Excel</button>',
+        'tombol Simpan Excel')
+
     html = sub_once(html, DATA_INIT_OLD, DATA_INIT_NEW, 'inisialisasi data')
     html = sub_once(html, EXPORT_OLD, EXPORT_NEW, 'exportHTML')
     html = sub_once(html, RESET_OLD, RESET_NEW, 'tombol muat ulang')
     html = sub_once(html, BTN_OLD, BTN_NEW, 'label tombol')
 
+    ekspor = read(os.path.join(SRC, 'ekspor.js'))
     collab = read(os.path.join(SRC, 'collab.js')).replace('__API_URL__', api_url)
-    html = sub_once(html, INIT_OLD, collab, 'sisip modul kolaborasi')
+    html = sub_once(html, INIT_OLD, ekspor + '\n' + collab, 'sisip modul ekspor + kolaborasi')
 
     with open(a.out, 'w', encoding='utf-8') as f:
         f.write(html)
