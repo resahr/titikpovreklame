@@ -34,24 +34,40 @@ var P = PropertiesService.getScriptProperties();
 var JUDUL_SS = 'Reklame POV — Data Editan';
 
 /**
- * Spreadsheet tempat data disimpan.
+ * Spreadsheet tempat seluruh editan tim disimpan.
  *
- * Skrip ini sengaja BISA berdiri sendiri (tidak menempel pada Sheet):
- * kalau belum punya Spreadsheet, ia membuatnya sendiri saat pertama kali
- * diberi izin oleh pemiliknya. Dengan begitu perkakas baris perintah
- * (clasp) tidak perlu izin akses Google Drive sama sekali — Spreadsheet
- * lahir di akun orang yang menekan "Allow", bukan di akun lain.
+ * SS_TETAP mengunci sasarannya. Ini ADA SEJARAHNYA: versi sebelumnya,
+ * bila openById gagal sesaat, menghapus id tersimpan lalu MEMBUAT
+ * spreadsheet baru yang kosong. Satu gangguan Drive sesaat sudah cukup
+ * membuat seluruh pekerjaan tim seolah lenyap (sebenarnya hanya jadi
+ * yatim di berkas lama). Jangan pernah kembali ke pola itu.
+ *
+ * Aturan sekarang:
+ *   - kalau SS_TETAP diisi, hanya berkas itu yang dipakai;
+ *   - gagal membuka = LEMPAR GALAT, bukan diam-diam bikin baru;
+ *   - membuat berkas baru hanya boleh saat benar-benar belum ada apa pun.
+ *
+ * Id spreadsheet bukan kata sandi: tanpa izin Drive, mengetahuinya
+ * tidak memberi akses apa pun.
  */
+var SS_TETAP = '1ljI2wEsf9xlCCoU5z3EFuktpyZ3jo8eYgSG2QvHmGyo';
+
 function getSS_() {
-  var id = P.getProperty('SS_ID');
-  if (id) {
-    try { return SpreadsheetApp.openById(id); }
-    catch (e) { P.deleteProperty('SS_ID'); }   // terhapus/tak terjangkau: buat ulang
+  if (SS_TETAP) {
+    var tetap = SpreadsheetApp.openById(SS_TETAP);   // gagal = galat jelas, bukan berkas baru
+    if (P.getProperty('SS_ID') !== SS_TETAP) {
+      P.setProperty('SS_ID', SS_TETAP);
+      P.setProperty('SS_URL', tetap.getUrl());
+    }
+    return tetap;
   }
+
+  var id = P.getProperty('SS_ID');
+  if (id) return SpreadsheetApp.openById(id);       // sengaja tidak ditangkap
 
   var ss = null;
   try { ss = SpreadsheetApp.getActive(); } catch (e) {}   // kasus menempel pada Sheet
-  if (!ss) ss = SpreadsheetApp.create(JUDUL_SS);
+  if (!ss) ss = SpreadsheetApp.create(JUDUL_SS);          // hanya saat benar-benar pertama kali
 
   P.setProperty('SS_ID', ss.getId());
   P.setProperty('SS_URL', ss.getUrl());
@@ -108,7 +124,15 @@ function tulisInfo_(ss, code) {
  * perlu menjalankan setup() secara manual dari editor Apps Script.
  */
 function ensureReady_() {
-  if (P.getProperty('READY') === '1') return;
+  /* READY menandai pemasangan sudah pernah jalan. Tapi kalau sheet kerjanya
+     hilang (berkas diganti, tab dihapus manual), pemasangan harus diulang —
+     kalau tidak, setiap permintaan gagal dengan "getLastRow of null". */
+  if (P.getProperty('READY') === '1') {
+    try {
+      if (getSS_().getSheetByName(SH_EDITS)) return;
+    } catch (e) { throw e; }
+    P.deleteProperty('READY');
+  }
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(LOCK_WAIT_MS)) return;
   try {

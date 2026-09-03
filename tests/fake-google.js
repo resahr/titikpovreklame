@@ -79,7 +79,7 @@ function makeSheet(name) {
 function load(codePath, opts) {
   opts = opts || {};
   const sheets = {}, props = {}, cache = {};
-  let dibuat = 0;
+  let dibuat = 0; const dibukaId = [];
 
   const spreadsheet = {
     getId:  () => 'ss-tiruan-001',
@@ -94,7 +94,8 @@ function load(codePath, opts) {
     SpreadsheetApp: {
       getActive: () => (opts.standalone ? null : spreadsheet),
       openById: id => {
-        if (id !== spreadsheet.getId()) throw new Error('tidak ditemukan: ' + id);
+        dibukaId.push(id);
+        if (opts.openByIdGagal) throw new Error('gagal membuka: ' + id);
         return spreadsheet;
       },
       create: () => { dibuat++; return spreadsheet; }
@@ -112,8 +113,10 @@ function load(codePath, opts) {
     Logger: { log: () => {} }
   };
   vm.createContext(sandbox);
-  vm.runInContext(fs.readFileSync(codePath, 'utf8'), sandbox, { filename: path.basename(codePath) });
-  return { sandbox, sheets, props, cache, dibuat: () => dibuat };
+  let kode = fs.readFileSync(codePath, 'utf8');
+  if (opts.transform) kode = opts.transform(kode);
+  vm.runInContext(kode, sandbox, { filename: path.basename(codePath) });
+  return { sandbox, sheets, props, cache, dibuat: () => dibuat, dibukaId };
 }
 
 module.exports = { load, makeSheet };

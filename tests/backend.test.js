@@ -139,9 +139,12 @@ console.log('\npemasangan otomatis pada permintaan pertama (tanpa Run setup manu
 }
 
 
-console.log('\nskrip berdiri sendiri — membuat Spreadsheet-nya sendiri');
+console.log('\npemasangan BARU (SS_TETAP kosong) — membuat Spreadsheet-nya sendiri');
 {
-  const g3 = load(path.join(__dirname, '..', 'apps-script', 'Code.gs'), { standalone: true });
+  // Hanya berlaku saat belum ada berkas sama sekali. Pada pemasangan yang
+  // sudah jalan, SS_TETAP terisi dan pembuatan otomatis tidak boleh terjadi.
+  const g3 = load(path.join(__dirname, '..', 'apps-script', 'Code.gs'),
+    { standalone: true, transform: k => k.replace(/var SS_TETAP = '[^']*'/, "var SS_TETAP = ''") });
   const call3 = req => JSON.parse(g3.sandbox.doPost({ postData: { contents: JSON.stringify(req) } }).getContent());
 
   ok(call3({ op: 'ping' }).ok, 'jalan walau tidak menempel pada Sheet');
@@ -211,6 +214,35 @@ console.log('\nhapus titik — hasil kerja TIDAK ikut terbuang');
   console.log('\nversi protokol dikabarkan ke klien');
   ok(c(Object.assign({op:'hello'},bu)).ver===2,'hello membawa versi');
   ok(c(Object.assign({op:'pull',since:0},bu)).ver===2,'pull membawa versi');
+}
+
+
+console.log('\nREGRESI 3 Sep 2026 — gagal membuka Spreadsheet TIDAK boleh bikin yang baru');
+{
+  // Insiden nyata: openById gagal sesaat, kode lama menghapus SS_ID lalu
+  // membuat spreadsheet baru yang kosong. 250 editan tim jadi yatim di
+  // berkas lama dan aplikasi seolah kehilangan semuanya.
+  const g = load(path.join(__dirname,'..','apps-script','Code.gs'), { openByIdGagal: true });
+  const c = req => JSON.parse(g.sandbox.doPost({postData:{contents:JSON.stringify(req)}}).getContent());
+  const res = c({ op:'ping' });
+  ok(res.ok === false, 'permintaan gagal dengan jujur, bukan pura-pura berhasil');
+  ok(g.dibuat() === 0, 'TIDAK ada spreadsheet baru yang dibuat');
+  ok(/gagal membuka/i.test(res.error || ''), 'galatnya menyebut sebabnya: ' + JSON.stringify((res.error||'').slice(0,40)));
+}
+
+console.log('\nspreadsheet yang dipakai selalu yang dikunci, sekali pun SS_ID meleset');
+{
+  const g = load(path.join(__dirname,'..','apps-script','Code.gs'));
+  const c = req => JSON.parse(g.sandbox.doPost({postData:{contents:JSON.stringify(req)}}).getContent());
+  g.props.SS_ID = 'berkas-salah-yang-kosong';        // meniru keadaan rusak
+  g.props.READY = '1';
+  ok(c({ op:'ping' }).ok, 'tetap melayani');
+  const tetap = /var SS_TETAP = '([^']*)'/.exec(
+    require('fs').readFileSync(path.join(__dirname,'..','apps-script','Code.gs'),'utf8'))[1];
+  ok(g.props.SS_ID === tetap, 'SS_ID dibetulkan sendiri ke berkas yang dikunci');
+  ok(g.dibukaId.every(x => x === tetap), 'hanya berkas terkunci yang pernah dibuka');
+  ok(g.dibuat() === 0, 'tidak membuat berkas baru');
+  ok(!!g.sheets.edits, 'sheet kerja dipasang ulang otomatis');
 }
 
 console.log(`\n${pass} lulus, ${fail} gagal\n`);
