@@ -138,8 +138,13 @@ Beberapa menit kemudian situsnya hidup di
 ### 5. Bagikan ke tim
 
 Kirim dua hal: **tautannya** dan **kode aksesnya**. Selesai.
-Setiap orang mengetik namanya sendiri saat pertama masuk; namanya diingat
-browser masing-masing.
+
+Setiap orang mengetik nama dan kode **sekali saja** di perangkatnya. Sesudah
+itu aplikasi masuk sendiri — halaman login tidak muncul lagi, termasuk setelah
+refresh, muat ulang otomatis, atau tutup-buka browser. Gerbang hanya kembali
+tampil bila kode diganti, atau saat orang itu memakai perangkat/browser baru.
+
+Mau berganti nama di perangkat yang sama? Klik **ganti nama** di bilah atas.
 
 ---
 
@@ -278,6 +283,7 @@ node tests/backend.test.js                        # 57 uji — logika backend
 node tests/contract.test.js                       # 12 uji — kecocokan klien↔server
 node --experimental-websocket tests/e2e.test.js   # 22 uji — dua browser sungguhan
 node --experimental-websocket tests/hapus.test.js # 21 uji — hapus/pulihkan & tab versi lama
+node --experimental-websocket tests/otologin.test.js # 15 uji — masuk otomatis
 ```
 
 Uji ujung-ke-ujung menjalankan `Code.gs` yang sesungguhnya di Node,

@@ -24,6 +24,7 @@ const SYNC = {
   queue: Object.create(null),   /* id -> true, menunggu dikirim             */
   peers: [], claimed:null,
   srvState: Object.create(null),  /* id -> status terakhir di server        */
+  gagalMasuk: '',                /* alasan kegagalan masuk terakhir        */
   usang: false,                   /* true bila server memakai versi lebih baru */
   perluRender: false,             /* status hapus berubah -> daftar wajib disusun ulang */
   pushT:null, pollT:null, sending:false, lastOk:0, fails:0
@@ -92,6 +93,21 @@ async function boot(){
     toast('Data dasar gagal dimuat: ' + e.message);
     return;
   }
+  /* Sudah pernah masuk di perangkat ini? Masuk sendiri, diam-diam.
+     Gerbang hanya muncul kalau memang belum pernah masuk, atau kalau
+     kredensial yang tersimpan ditolak server. */
+  const namaTsp = (localStorage.getItem(LSK.name) || '').trim();
+  const kodeTsp = (localStorage.getItem(LSK.code) || '').trim();
+  if (namaTsp && kodeTsp && API_URL && API_URL.indexOf('__API') !== 0) {
+    setSync('busy', `Masuk sebagai <b>${esc(namaTsp)}</b>…`);
+    if (await masuk(namaTsp, kodeTsp, true)) return;
+    setSync('', 'Perlu masuk ulang');
+    openGate(SYNC.gagalMasuk
+      ? 'Sambungan ke server gagal: ' + SYNC.gagalMasuk
+      : 'Kode akses yang tersimpan sudah tidak berlaku. Masukkan yang baru.');
+    return;
+  }
+
   setSync('', 'Menunggu Anda masuk…');
   openGate();
 }
@@ -108,6 +124,43 @@ function openGate(msg){
   setTimeout(() => ($('gateName').value ? $('gateCode') : $('gateName')).focus(), 60);
 }
 
+/**
+ * Satu-satunya jalur masuk, dipakai gerbang maupun masuk otomatis.
+ * `diam` = true berarti dipanggil tanpa gerbang tampil; kegagalan
+ * jaringan dicoba ulang sebentar sebelum menyerah, supaya sambungan
+ * yang tersendat tidak melempar orang ke halaman login.
+ */
+async function masuk(name, code, diam){
+  SYNC.name = name; SYNC.code = code;
+  const percobaan = diam ? 3 : 1;
+
+  for (let i = 1; i <= percobaan; i++) {
+    try {
+      const res = await api('hello');
+      if (!res.ok) {
+        /* Kode ditolak: percuma diulang, langsung ke gerbang. */
+        if (res.code === 'BAD_CODE') return false;
+        throw new Error(res.error || 'ditolak');
+      }
+      localStorage.setItem(LSK.name, name);
+      localStorage.setItem(LSK.code, code);
+      $('gate').hidden = true;
+      $('meName').textContent = name;
+      SYNC.live = true;
+      await firstSync();
+      startPolling();
+      return true;
+    } catch (e) {
+      SYNC.gagalMasuk = e.message;
+      if (i < percobaan) {
+        setSync('busy', `Sambungan tersendat — mencoba lagi (${i}/${percobaan - 1})…`);
+        await new Promise(r => setTimeout(r, 2000 * i));
+      }
+    }
+  }
+  return false;
+}
+
 async function gateSubmit(){
   const name = $('gateName').value.trim();
   const code = $('gateCode').value.trim();
@@ -121,23 +174,13 @@ async function gateSubmit(){
   $('gateGo').disabled = true;
   $('gateMsg').className = 'info';
   $('gateMsg').textContent = 'Menghubungi server…';
+  SYNC.gagalMasuk = '';
 
-  SYNC.name = name; SYNC.code = code;
-  try {
-    const res = await api('hello');
-    if (!res.ok) throw new Error(res.error || 'ditolak');
-    localStorage.setItem(LSK.name, name);
-    localStorage.setItem(LSK.code, code);
-    $('gate').hidden = true;
-    $('meName').textContent = name;
-    SYNC.live = true;
-    await firstSync();
-    startPolling();
-  } catch (e) {
+  const berhasil = await masuk(name, code, false);
+  $('gateGo').disabled = false;
+  if (!berhasil) {
     $('gateMsg').className = '';
-    $('gateMsg').textContent = 'Gagal masuk: ' + e.message;
-  } finally {
-    $('gateGo').disabled = false;
+    $('gateMsg').textContent = 'Gagal masuk: ' + (SYNC.gagalMasuk || 'kode akses salah');
   }
 }
 
