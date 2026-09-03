@@ -264,6 +264,7 @@ border-radius:4px;padding:9px 10px;font-size:13px;font-family:Arial;margin-botto
 <button type="button" data-v="with">Ada POV</button>
 <button type="button" data-v="without">Belum ada</button>
 <button type="button" data-v="flag">Perlu dicek</button>
+<button type="button" data-v="deleted">Terhapus</button>
 </div>
 <select id="fSort">
 <option value="mean_desc">Urut: Jarak Terjauh</option>
@@ -292,6 +293,7 @@ border-radius:4px;padding:9px 10px;font-size:13px;font-family:Arial;margin-botto
 <button class="btn xs pri" id="eAdd">+ Tambah POV</button>
 <button class="btn xs" id="eUndo">Undo</button>
 <button class="btn xs danger" id="eReset">Kembalikan titik ini</button>
+<button class="btn xs danger" id="eDel" title="Tandai titik ini terhapus. POV-nya tetap tersimpan dan bisa dipulihkan kapan saja">Hapus titik</button>
 </div>
 <div class="erowhead"><span>#</span><span>Lintang</span><span>Bujur</span><span>Jarak</span><span></span></div>
 <div id="eRows"></div>
@@ -651,6 +653,8 @@ function setHint(){
 
 /* ========== filter ========== */
 function matches(r,skip){
+  if(povMode==='deleted'){ if(!r.del)return false; }
+  else if(r.del)return false;
   if(skip!=='tipe' &&selTipe.size &&!selTipe.has(r.tipe)  )return false;
   if(skip!=='jenis'&&selJenis.size&&!selJenis.has(r.jenis))return false;
   if(skip!=='kec'  &&selKec.size  &&!selKec.has(r.kec)    )return false;
@@ -796,6 +800,7 @@ function exportCSV(){
   const rows=[['id_reklame','jenis','tipe','jalan','kelurahan','kecamatan','prioritas','reklame_lat','reklame_lon',
     'pov_ke','pov_lat','pov_lon','jarak_m','status','perlu_dicek'].join(',')];
   data.forEach(r=>{
+    if(r.del)return;
     if(!r.povs.length){rows.push([r.id,r.jenis,r.tipe,r.jalan,r.kel,r.kec,r.prio,r.rlat,r.rlon,
       '','','','','tanpa POV',''].map(q).join(','));return;}
     r.povs.forEach((p,i)=>rows.push([r.id,r.jenis,r.tipe,r.jalan,r.kel,r.kec,r.prio,r.rlat,r.rlon,
@@ -924,6 +929,7 @@ function barisDetail() {
                 'reklame_lat', 'reklame_lon', 'pov_ke', 'pov_lat', 'pov_lon',
                 'jarak_m', 'status', 'perlu_dicek']];
   data.forEach(r => {
+    if (r.del) return;                 /* titik terhapus tidak ikut diekspor */
     if (!r.povs.length) {
       out.push([r.id, r.jenis, r.tipe, r.jalan, r.kel, r.kec, r.prio, r.rlat, r.rlon,
                 '', '', '', '', 'tanpa POV', '']);
@@ -950,7 +956,28 @@ function barisDetail() {
 function barisRingkas() {
   const out = [['id_reklame', 'jenis', 'tipe', 'jalan', 'jarak_median_m']];
   data.forEach(r => {
+    if (r.del) return;                 /* titik terhapus tidak ikut diekspor */
     out.push([r.id, r.jenis, r.tipe, r.jalan, r.povs.length ? r.median : '']);
+  });
+  return out;
+}
+
+/**
+ * Sheet 3 — daftar titik yang ditandai terhapus, lengkap dengan siapa
+ * dan kapan. Hanya muncul kalau memang ada yang dihapus.
+ *
+ * Penghapusan tidak membuang apa pun: POV-nya masih tersimpan di server
+ * dan titiknya bisa dipulihkan lewat filter "Terhapus" di aplikasi.
+ * Sheet ini ada supaya penghapusan tetap bisa ditelusuri di luar aplikasi.
+ */
+function barisDihapus() {
+  const out = [['id_reklame', 'jenis', 'tipe', 'jalan', 'kecamatan',
+                'jumlah_pov_tersimpan', 'jarak_median_m', 'dihapus_oleh', 'waktu']];
+  data.forEach(r => {
+    if (!r.del) return;
+    out.push([r.id, r.jenis, r.tipe, r.jalan, r.kec,
+              r.povs.length, r.povs.length ? r.median : '',
+              r.by || '', (r.at || '').replace('T', ' ').slice(0, 16)]);
   });
   return out;
 }
@@ -987,11 +1014,20 @@ function exportXLSX() {
   wsS['!freeze'] = { xSplit: 0, ySplit: 1 };
   XLSX.utils.book_append_sheet(wb, wsS, 'Ringkas');
 
+  const h = barisDihapus();
+  if (h.length > 1) {
+    const wsH = XLSX.utils.aoa_to_sheet(h);
+    wsH['!cols'] = lebarKolom(h, 34);
+    wsH['!freeze'] = { xSplit: 0, ySplit: 1 };
+    XLSX.utils.book_append_sheet(wb, wsH, 'Dihapus');
+  }
+
   XLSX.writeFile(wb, `POV_reklame_${stamp()}.xlsx`);
 
-  const berPOV = data.filter(r => r.povs.length).length;
+  const berPOV = data.filter(r => !r.del && r.povs.length).length;
   toast(`Excel tersimpan — ${nf(d.length - 1)} baris POV, ` +
-        `${nf(s.length - 1)} titik (${nf(berPOV)} ber-POV)`);
+        `${nf(s.length - 1)} titik (${nf(berPOV)} ber-POV)` +
+        (h.length > 1 ? ` · ${nf(h.length - 1)} terhapus di sheet terpisah` : ''));
 }
 
 $('btnXLSX').onclick = exportXLSX;
@@ -1009,6 +1045,7 @@ $('btnXLSX').onclick = exportXLSX;
 
 /* Diisi saat pemasangan — lihat README.md langkah 5. */
 const API_URL = 'https://script.google.com/macros/s/AKfycbxAJBU8l9BmXapjx0NykKcYYzHDYrpKtWGlb98GEJBalv-bCQT0wJvwoDPl_RHYBTzsNQ/exec';
+const APP_VERSION = 2;    // harus sama dengan APP_VER di apps-script/Code.gs
 
 const POLL_MS  = 10000;   /* selang tarik perubahan dari server   */
 const PUSH_MS  = 1200;    /* tunda kirim setelah berhenti mengedit */
@@ -1020,6 +1057,9 @@ const SYNC = {
   base:  Object.create(null),   /* id -> rev server terakhir yang kita tahu */
   queue: Object.create(null),   /* id -> true, menunggu dikirim             */
   peers: [], claimed:null,
+  srvState: Object.create(null),  /* id -> status terakhir di server        */
+  usang: false,                   /* true bila server memakai versi lebih baru */
+  perluRender: false,             /* status hapus berubah -> daftar wajib disusun ulang */
   pushT:null, pollT:null, sending:false, lastOk:0, fails:0
 };
 
@@ -1148,6 +1188,7 @@ async function api(op, extra){
   });
   if (!r.ok) throw new Error('HTTP ' + r.status);
   const j = await r.json();
+  cekVersi(j);
   if (j && j.code === 'BAD_CODE') {
     SYNC.live = false;
     stopPolling();
@@ -1193,6 +1234,8 @@ function applyRemote(ch){
     return;
   }
 
+  SYNC.srvState[ch.id] = ch.state;
+
   if (ch.state === 'orig') {
     data[i] = JSON.parse(JSON.stringify(origMap[ch.id]));
   } else {
@@ -1200,7 +1243,15 @@ function applyRemote(ch){
     r.povs = (ch.povs || []).map(povIn);
     if (ch.rlat != null) r.rlat = ch.rlat;
     if (ch.rlon != null) r.rlon = ch.rlon;
-    r.ed = true; r.by = ch.editor; r.at = ch.updated;
+    r.by = ch.editor; r.at = ch.updated;
+    /* 'hapus' menyimpan POV apa adanya — titik ditandai terhapus,
+       hasil kerjanya tidak dibuang, sehingga pemulihan mengembalikannya utuh. */
+    const delSebelum = !!r.del;
+    r.del = (ch.state === 'hapus');
+    r.ed  = !r.del;
+    /* Muncul/hilangnya titik mengubah isi daftar tersaring, bukan sekadar
+       isi satu kartu — jadi daftar & peta harus disusun ulang. */
+    if (delSebelum !== !!r.del) SYNC.perluRender = true;
   }
   recalc(data[i]); syncFiltered(data[i]);
   if (layers[ch.id]) rebuild(ch.id);
@@ -1232,14 +1283,18 @@ async function pushNow(){
   const items = ids.map(id => {
     const r = byId(id);
     if (!r) return null;
-    const isOrig = r.ed !== true;
-    return {
+    const state = r.del ? 'hapus' : (r.ed ? 'edit' : 'orig');
+    const it = {
       id,
       baseRev: SYNC.base[id] || 0,
-      state:   isOrig ? 'orig' : 'edit',
-      povs:    isOrig ? [] : r.povs.map(povOut),
+      state,
+      povs:    state === 'orig' ? [] : r.povs.map(povOut),
       rlat:    r.rlat, rlon: r.rlon
     };
+    /* Server menolak menghidupkan titik terhapus lewat penyimpanan biasa.
+       Hanya pemulihan yang disengaja yang boleh, dan itu ditandai di sini. */
+    if (state !== 'hapus' && SYNC.srvState[id] === 'hapus') it.undelete = true;
+    return it;
   }).filter(Boolean);
 
   try {
@@ -1251,6 +1306,15 @@ async function pushNow(){
 
     res.accepted.forEach(a => {
       SYNC.base[a.id] = a.rev;
+      const r = byId(a.id);
+      if (r) {
+        SYNC.srvState[a.id] = r.del ? 'hapus' : (r.ed ? 'edit' : 'orig');
+        /* Server mencatat kita sebagai pengubah — catat juga di sini,
+           supaya ekspor & kartu daftar menampilkan nama yang sama
+           tanpa harus menunggu perubahan itu ditarik kembali. */
+        r.by = SYNC.name;
+        r.at = new Date().toISOString();
+      }
       delete SYNC.queue[a.id];
     });
 
@@ -1301,7 +1365,8 @@ async function pollNow(){
       const others = res.changes.filter(c => c.editor !== SYNC.name);
       res.changes.forEach(applyRemote);
       SYNC.rev = res.rev;
-      drawOverview(); updateStats(); updateFoot();
+      if (SYNC.perluRender) { SYNC.perluRender = false; render(); }
+      else { drawOverview(); updateStats(); updateFoot(); }
       if (others.length) {
         const who = others.map(c => c.editor).filter((v, i, a) => a.indexOf(v) === i);
         toast(`${others.length} titik diperbarui oleh ${who.join(', ')}`);
@@ -1363,6 +1428,7 @@ function setSync(state, msg){
 }
 
 function setSyncIdle(){
+  if (SYNC.usang) return;          /* jangan timpa peringatan versi baru */
   const n = queueIds().length;
   if (n) { setSync('busy', `${n} perubahan menunggu dikirim…`); return; }
   const t = SYNC.lastOk ? new Date(SYNC.lastOk) : new Date();
@@ -1387,9 +1453,12 @@ function lockOf(id){
 }
 
 function injectLockWarn(){
-  const w = document.createElement('div');
-  w.id = 'lockwarn'; w.hidden = true;
-  $('editor').insertBefore(w, $('editor').firstChild);
+  const ed = $('editor');
+  ['delwarn', 'lockwarn'].forEach(id => {
+    const w = document.createElement('div');
+    w.id = id; w.hidden = true;
+    ed.insertBefore(w, ed.firstChild);
+  });
 }
 
 function refreshLockWarn(){
@@ -1450,8 +1519,12 @@ resetRec = function () {
   if (id) { const r = byId(id); if (r) { r.ed = false; markSync(r); } }
 };
 
+const _renderEditor = renderEditor;
+renderEditor = function () { _renderEditor(); syncDelUI(); };
+
 const _selectRec = selectRec;
 selectRec = function (id, zoom, fromDrag) {
+  _hapusArm = false;
   _selectRec(id, zoom, fromDrag);
   refreshLockWarn();
   if (SYNC.live && editMode && id !== SYNC.claimed) pollNow();
@@ -1478,8 +1551,89 @@ cardHTML = function (r) {
   return i < 0 ? html + extra : html.slice(0, i) + extra + html.slice(i);
 };
 
+/* ───────────── versi aplikasi ─────────────
+   Kalau server sudah memakai protokol lebih baru, tab ini usang.
+   Ia tetap boleh menyelesaikan yang belum terkirim, lalu memuat ulang
+   sendiri begitu aman — tidak ada pekerjaan yang hilang.            */
+
+function cekVersi(res){
+  if (!res || !res.ver || res.ver === APP_VERSION || SYNC.usang) return;
+  SYNC.usang = true;
+  setSync('off', 'Versi baru tersedia — halaman akan dimuat ulang sendiri');
+  const coba = () => {
+    if (queueIds().length || editMode || addMode) { setTimeout(coba, 5000); return; }
+    location.reload();
+  };
+  setTimeout(coba, 4000);
+}
+
+/* ───────────── hapus & pulihkan titik ─────────────
+   Menghapus TIDAK membuang hasil kerja: POV tetap tersimpan di server,
+   titiknya hanya ditandai terhapus. Memulihkan mengembalikannya utuh. */
+
+let _hapusArm = false;
+
+function syncDelUI(){
+  const b = $('eDel'), w = $('delwarn');
+  if (!b || !w) return;
+  const r = selectedId ? byId(selectedId) : null;
+  if (!r || !editMode) { w.hidden = true; return; }
+
+  if (r.del) {
+    b.textContent = 'Pulihkan titik';
+    b.className = 'btn xs pri';
+    w.hidden = false;
+    w.innerHTML = `<span class="grow">Titik ini <b>ditandai terhapus</b>` +
+      (r.by ? ` oleh ${esc(r.by)}` : '') +
+      `. ${r.povs.length} POV-nya tetap tersimpan dan akan kembali utuh bila dipulihkan.</span>`;
+  } else {
+    b.textContent = _hapusArm ? 'Yakin hapus?' : 'Hapus titik';
+    b.className = 'btn xs danger';
+    w.hidden = true;
+  }
+}
+
+function toggleHapus(){
+  const r = selectedId ? byId(selectedId) : null;
+  if (!r) return;
+
+  if (r.del) {                       /* pulihkan */
+    _hapusArm = false;
+    snapshot(r);
+    r.del = false;
+    r.ed  = r.povs.some(p => p.st) || undefined;
+    recalc(r); syncFiltered(r);
+    markSync(r);
+    rebuild(r.id); drawOverview(); render(); renderEditor();
+    toast(`${r.id} dipulihkan — ${r.povs.length} POV kembali`);
+    return;
+  }
+
+  if (!_hapusArm) {                  /* klik pertama: minta konfirmasi */
+    _hapusArm = true; syncDelUI();
+    setTimeout(() => { if (_hapusArm) { _hapusArm = false; syncDelUI(); } }, 4000);
+    return;
+  }
+
+  _hapusArm = false;
+  snapshot(r);
+  r.del = true;
+  syncFiltered(r);
+  markSync(r);
+
+  const id = r.id, n = r.povs.length;
+  if (layers[id]) { map.removeLayer(layers[id]); delete layers[id]; delete refs[id]; }
+  shown = shown.filter(x => x !== id);
+  selectedId = null;
+  render(); renderEditor();
+  toast(`${id} dihapus — ${n} POV tetap tersimpan, bisa dipulihkan lewat filter "Terhapus"`);
+}
+
+function jumlahTerhapus(){ return data.reduce((a, r) => a + (r.del ? 1 : 0), 0); }
+
 /* ───────────── event tambahan ───────────── */
 
+$('eDel').onclick = toggleHapus;
 $('gateGo').onclick = gateSubmit;
 ['gateName', 'gateCode'].forEach(id =>
   $(id).addEventListener('keydown', e => { if (e.key === 'Enter') gateSubmit(); }));

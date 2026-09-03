@@ -94,13 +94,32 @@ oke "Code.gs + appsscript.json terunggah"
 # ─────────────────────────────────────────────────────────────
 bold $'\n4/6  Menerbitkan sebagai Web App'
 
-clasp create-deployment -d "webgis-pov $(date +%Y%m%d-%H%M)" >/tmp/clasp-deploy.log 2>&1 \
-  || { cat /tmp/clasp-deploy.log; gagal "deploy gagal"; }
+# Deployment yang sudah dipakai tim, dibaca dari config.json.
+LAMA=$(python3 -c "
+import json,os,re
+try:
+    u=json.load(open('config.json')).get('api_url','')
+    m=re.search(r'/macros/s/([A-Za-z0-9_-]+)/exec',u)
+    print(m.group(1) if m else '')
+except Exception: print('')" 2>/dev/null)
 
-# ID diambil dari keluaran create-deployment ini juga ("Deployed AKfyc... @n").
-# Jangan pakai `list-deployments | tail -1`: urutannya tidak dijamin, dan
-# deployment @HEAD yang selalu ada bisa terpilih — itu bukan yang kita terbitkan.
-DEPLOY_ID=$(grep -oE 'AKfyc[A-Za-z0-9_-]+' /tmp/clasp-deploy.log | head -1)
+if [ -n "$LAMA" ]; then
+  # PERBARUI deployment yang ada — URL /exec tidak berubah, sehingga
+  # tab yang sedang terbuka di komputer tim tidak putus.
+  # Membuat deployment baru akan mengganti URL dan memutus semua orang.
+  info "memperbarui deployment yang sudah dipakai tim (URL tidak berubah)"
+  clasp redeploy "$LAMA" -d "webgis-pov $(date +%Y%m%d-%H%M)" >/tmp/clasp-deploy.log 2>&1 \
+    || { cat /tmp/clasp-deploy.log; gagal "redeploy gagal"; }
+  DEPLOY_ID="$LAMA"
+else
+  info "belum ada deployment tersimpan — membuat yang pertama"
+  clasp create-deployment -d "webgis-pov $(date +%Y%m%d-%H%M)" >/tmp/clasp-deploy.log 2>&1 \
+    || { cat /tmp/clasp-deploy.log; gagal "deploy gagal"; }
+  # ID diambil dari keluaran create-deployment ini juga ("Deployed AKfyc... @n").
+  # Jangan pakai `list-deployments | tail -1`: urutannya tidak dijamin, dan
+  # deployment @HEAD yang selalu ada bisa terpilih — itu bukan yang kita terbitkan.
+  DEPLOY_ID=$(grep -oE 'AKfyc[A-Za-z0-9_-]+' /tmp/clasp-deploy.log | head -1)
+fi
 [ -n "$DEPLOY_ID" ] || { cat /tmp/clasp-deploy.log; gagal "deploymentId tidak terbaca"; }
 
 API_URL="https://script.google.com/macros/s/${DEPLOY_ID}/exec"

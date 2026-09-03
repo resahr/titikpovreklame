@@ -26,6 +26,7 @@ var CLAIM_TTL_MS = 150000;  // kunci titik kedaluwarsa 2,5 menit tanpa heartbeat
 var LOCK_WAIT_MS = 25000;
 var MAX_LOG_ROWS = 20000;   // log dipangkas otomatis di atas ini
 
+var APP_VER = 2;            // dinaikkan tiap kali protokol berubah
 var P = PropertiesService.getScriptProperties();
 
 // ─────────────────────────── pemasangan ───────────────────────────
@@ -218,6 +219,7 @@ function opHello_(name) {
     name: name,
     serverTime: Date.now(),
     claimTtl: CLAIM_TTL_MS,
+    ver: APP_VER,
     sheet: P.getProperty('SS_URL') || ''
   };
 }
@@ -265,7 +267,7 @@ function opPull_(since, name, claim) {
     }
   }
 
-  return { ok: true, rev: rev, changes: changes, presence: presence };
+  return { ok: true, rev: rev, ver: APP_VER, changes: changes, presence: presence };
 }
 
 /**
@@ -318,31 +320,36 @@ function opPush_(items, name) {
       var cur      = index[id];
       var baseRev  = Number(it.baseRev || 0);
       var serverRev = cur ? cur.rev : 0;
+      var curState  = cur ? String(vals[cur.i][2] || 'edit') : '';
+
+      // Penghapusan bersifat LENGKET: sekali sebuah titik ditandai hapus,
+      // ia tidak bisa dihidupkan lagi oleh penyimpanan biasa — hanya oleh
+      // pemulihan yang disengaja (undelete: true). Ini yang melindungi
+      // penghapusan dari tab lama yang masih memakai aplikasi versi
+      // sebelumnya dan tidak mengenal status ini.
+      if (curState === 'hapus' && it.state !== 'hapus' && it.undelete !== true) {
+        conflicts.push({ id: id, alasan: 'terhapus', server: rowKeServer_(vals[cur.i]) });
+        continue;
+      }
 
       if (serverRev > baseRev) {
-        conflicts.push({
-          id: id,
-          server: {
-            rev:    serverRev,
-            state:  String(vals[cur.i][2] || 'edit'),
-            povs:   vals[cur.i][3] ? JSON.parse(vals[cur.i][3]) : [],
-            rlat:   vals[cur.i][4] === '' ? null : Number(vals[cur.i][4]),
-            rlon:   vals[cur.i][5] === '' ? null : Number(vals[cur.i][5]),
-            editor: String(vals[cur.i][6] || ''),
-            updated: String(vals[cur.i][7] || '')
-          }
-        });
+        conflicts.push({ id: id, alasan: 'basi', server: rowKeServer_(vals[cur.i]) });
         continue;
       }
 
       var rev   = bumpRev_();
-      var state = it.state === 'orig' ? 'orig' : 'edit';
-      var povs  = state === 'orig' ? [] : normPovs_(it.povs);
-      var row   = [
+      var state = (it.state === 'orig' || it.state === 'hapus') ? it.state : 'edit';
+
+      // Hanya 'orig' yang mengosongkan isi (kembali ke data survei).
+      // 'hapus' TETAP menyimpan POV dan koordinatnya, supaya titik yang
+      // dipulihkan kembali lengkap dengan seluruh hasil editan sebelumnya.
+      var kosong = (state === 'orig');
+      var povs   = kosong ? [] : normPovs_(it.povs);
+      var row    = [
         id, rev, state,
-        state === 'orig' ? '' : JSON.stringify(povs),
-        state === 'orig' ? '' : num6_(it.rlat),
-        state === 'orig' ? '' : num6_(it.rlon),
+        kosong ? '' : JSON.stringify(povs),
+        kosong ? '' : num6_(it.rlat),
+        kosong ? '' : num6_(it.rlon),
         name, stampIso
       ];
 
@@ -354,8 +361,10 @@ function opPush_(items, name) {
       if (cur) { vals[cur.i] = row; }
 
       accepted.push({ id: id, rev: rev });
-      logs.push([stampIso, name, id,
-                 state === 'orig' ? 'kembalikan' : 'simpan',
+      var aksi = state === 'orig'  ? 'kembalikan'
+               : state === 'hapus' ? 'hapus titik'
+               : (it.undelete === true ? 'pulihkan titik' : 'simpan');
+      logs.push([stampIso, name, id, aksi,
                  state === 'orig' ? 'dikembalikan ke data survei' : povs.length + ' POV']);
     }
 
@@ -425,6 +434,19 @@ function touchPresence_(ss, name, claim) {
  * Penanda ini WAJIB dipertahankan — dialah yang memberi warna
  * hijau/oranye/biru pada POV di peta.
  */
+/** Bentuk satu baris sheet `edits` menjadi objek yang dikirim ke klien. */
+function rowKeServer_(v) {
+  return {
+    rev:     Number(v[1]),
+    state:   String(v[2] || 'edit'),
+    povs:    v[3] ? JSON.parse(v[3]) : [],
+    rlat:    v[4] === '' ? null : Number(v[4]),
+    rlon:    v[5] === '' ? null : Number(v[5]),
+    editor:  String(v[6] || ''),
+    updated: String(v[7] || '')
+  };
+}
+
 function normPovs_(povs) {
   var out = [];
   if (!povs || !povs.length) return out;

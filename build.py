@@ -148,6 +148,44 @@ def main():
         'dan ringkasan jarak median per titik">Simpan Excel</button>',
         'tombol Simpan Excel')
 
+    # CSV lama ikut mengecualikan titik terhapus, supaya sejalan dengan Excel
+    html = sub_once(
+        html,
+        "  const rows=[['id_reklame','jenis','tipe','jalan','kelurahan','kecamatan','prioritas','reklame_lat','reklame_lon',\n"
+        "    'pov_ke','pov_lat','pov_lon','jarak_m','status','perlu_dicek'].join(',')];\n"
+        "  data.forEach(r=>{\n",
+        "  const rows=[['id_reklame','jenis','tipe','jalan','kelurahan','kecamatan','prioritas','reklame_lat','reklame_lon',\n"
+        "    'pov_ke','pov_lat','pov_lon','jarak_m','status','perlu_dicek'].join(',')];\n"
+        "  data.forEach(r=>{\n"
+        "    if(r.del)return;\n",
+        'CSV kecualikan terhapus')
+
+    # ── fitur hapus titik ──
+    html = sub_once(
+        html,
+        '<button class="btn xs danger" id="eReset">Kembalikan titik ini</button>',
+        '<button class="btn xs danger" id="eReset">Kembalikan titik ini</button>\n'
+        '<button class="btn xs danger" id="eDel" title="Tandai titik ini terhapus. '
+        'POV-nya tetap tersimpan dan bisa dipulihkan kapan saja">Hapus titik</button>',
+        'tombol Hapus titik')
+
+    html = sub_once(
+        html,
+        '<button type="button" data-v="flag">Perlu dicek</button>',
+        '<button type="button" data-v="flag">Perlu dicek</button>\n'
+        '<button type="button" data-v="deleted">Terhapus</button>',
+        'filter Terhapus')
+
+    # Titik terhapus disembunyikan dari peta, daftar, statistik, dan ekspor —
+    # kecuali saat filter "Terhapus" dipilih, supaya bisa ditinjau & dipulihkan.
+    html = sub_once(
+        html,
+        "function matches(r,skip){\n",
+        "function matches(r,skip){\n"
+        "  if(povMode==='deleted'){ if(!r.del)return false; }\n"
+        "  else if(r.del)return false;\n",
+        'saring titik terhapus')
+
     html = sub_once(html, DATA_INIT_OLD, DATA_INIT_NEW, 'inisialisasi data')
     html = sub_once(html, EXPORT_OLD, EXPORT_NEW, 'exportHTML')
     html = sub_once(html, RESET_OLD, RESET_NEW, 'tombol muat ulang')

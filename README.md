@@ -179,6 +179,24 @@ masukkan nama dan kode, semua editan tim langsung termuat.
 | **Simpan JSON / CSV / HTML** | Tetap seperti semula. Berkas HTML hasil unduhan berjalan mandiri, luring, tanpa sinkronisasi |
 | **Simpan Excel** | Baru. Berkas `.xlsx` berisi **dua sheet** — lihat di bawah |
 
+### Menghapus titik reklame
+
+Tombol **Hapus titik** ada di panel editor, di samping "Kembalikan titik ini".
+Klik sekali untuk meminta konfirmasi, klik lagi untuk menghapus.
+
+**Menghapus tidak membuang hasil kerja.** Titiknya ditandai terhapus, tapi
+seluruh POV dan koordinat editannya tetap tersimpan di server. Memulihkannya
+mengembalikan semuanya persis seperti sebelum dihapus.
+
+Titik terhapus hilang dari peta, daftar, statistik, dan ekspor. Untuk
+meninjaunya, pilih **Terhapus** di baris filter — di sana ada tombol
+**Pulihkan titik**.
+
+Penghapusan bersifat **lengket di sisi server**: sekali sebuah titik ditandai
+hapus, penyimpanan biasa tidak bisa menghidupkannya lagi — hanya pemulihan
+yang disengaja. Ini yang melindungi penghapusan dari tab yang masih memakai
+aplikasi versi lama. Setiap penghapusan dan pemulihan tercatat di sheet `log`.
+
 ### Ekspor Excel dua sheet
 
 CSV secara format hanya bisa memuat satu tabel, jadi permintaan "sheet 2"
@@ -201,7 +219,13 @@ dihitung ulang otomatis setiap kali POV digeser, ditambah, atau dihapus.
 Titik tanpa POV dibiarkan **kosong**, bukan diisi 0 — angka 0 akan terbaca
 sebagai "POV tepat di titik reklame", padahal artinya belum ada POV sama sekali.
 
-Keduanya mengekspor **seluruh 2.420 titik**, bukan hanya yang sedang tersaring.
+**Sheet `Dihapus`** — hanya muncul kalau ada titik yang dihapus. Berisi
+id, jenis, tipe, jalan, kecamatan, jumlah POV yang masih tersimpan, jarak
+median, siapa yang menghapus, dan kapan. Gunanya supaya penghapusan tetap
+bisa ditelusuri di luar aplikasi.
+
+Ekspor mencakup **seluruh 2.420 titik** (dikurangi yang terhapus), bukan
+hanya yang sedang tersaring.
 
 ---
 
@@ -218,6 +242,20 @@ Semua dijalankan dari editor Apps Script (pilih fungsi, klik Run):
 
 Sheet `log` mencatat siapa mengubah titik apa dan kapan — berguna kalau ada
 yang perlu ditelusuri. Sheet `presence` isinya sementara, boleh diabaikan.
+
+### Menerbitkan pembaruan saat aplikasi sedang dipakai
+
+`deploy.sh` **memperbarui deployment yang sudah ada**, bukan membuat yang baru,
+sehingga URL `/exec` tidak berubah dan tab yang sedang terbuka di komputer tim
+tidak terputus.
+
+Urutannya penting bila protokolnya berubah: **backend dulu, halaman kemudian.**
+`deploy.sh` sudah melakukannya dalam urutan itu.
+
+Kalau `APP_VER` di `Code.gs` dinaikkan, klien versi lama akan menerima nomor
+versi yang lebih tinggi, menampilkan pemberitahuan, lalu memuat ulang dirinya
+sendiri **setelah** semua perubahannya tersimpan dan pemakainya tidak sedang
+mengedit. Tidak ada pekerjaan yang hilang.
 
 ### Kalau mockup direvisi lagi
 
@@ -236,9 +274,10 @@ diam-diam menghasilkan halaman rusak.
 ## Menjalankan uji
 
 ```bash
-node tests/backend.test.js                        # 35 uji — logika backend
+node tests/backend.test.js                        # 57 uji — logika backend
 node tests/contract.test.js                       # 12 uji — kecocokan klien↔server
 node --experimental-websocket tests/e2e.test.js   # 22 uji — dua browser sungguhan
+node --experimental-websocket tests/hapus.test.js # 21 uji — hapus/pulihkan & tab versi lama
 ```
 
 Uji ujung-ke-ujung menjalankan `Code.gs` yang sesungguhnya di Node,

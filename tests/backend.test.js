@@ -160,5 +160,58 @@ console.log('\nskrip berdiri sendiri — membuat Spreadsheet-nya sendiri');
   ok(call3({ op: 'pull', since: 0, code: kode, name: 'Resa' }).changes.length === 1, 'data tersimpan normal');
 }
 
+
+console.log('\nhapus titik — hasil kerja TIDAK ikut terbuang');
+{
+  const g=load(path.join(__dirname,'..','apps-script','Code.gs'));
+  const c=req=>JSON.parse(g.sandbox.doPost({postData:{contents:JSON.stringify(req)}}).getContent());
+  c({op:'ping'}); const K=g.props.ACCESS_CODE;
+  const bu={code:K,name:'Budi'}, sa={code:K,name:'Sari'};
+
+  // Budi menggarap sebuah titik
+  let r=c(Object.assign({op:'push',items:[{id:'H-1',baseRev:0,state:'edit',
+    povs:[[1.1,104.1],[1.2,104.2,2]],rlat:1,rlon:104}]},bu));
+  const revEdit=r.accepted[0].rev;
+
+  // lalu menghapusnya, mengirim POV yang sama
+  r=c(Object.assign({op:'push',items:[{id:'H-1',baseRev:revEdit,state:'hapus',
+    povs:[[1.1,104.1],[1.2,104.2,2]],rlat:1,rlon:104}]},bu));
+  ok(r.accepted.length===1,'penghapusan diterima');
+  const revHapus=r.accepted[0].rev;
+
+  let ch=c(Object.assign({op:'pull',since:0},sa)).changes.find(x=>x.id==='H-1');
+  ok(ch.state==='hapus','ditandai hapus');
+  ok(ch.povs.length===2,'POV tetap tersimpan, tidak dibuang');
+  ok(ch.povs[1][2]===2,'penanda POV baru pun utuh');
+  ok(ch.rlat===1,'koordinat reklame tetap');
+
+  console.log('\npenghapusan LENGKET — tab versi lama tidak bisa menghidupkannya lagi');
+  // Persis yang dilakukan klien lama: menyimpan biasa, tanpa tahu soal hapus
+  const lama=c(Object.assign({op:'push',items:[{id:'H-1',baseRev:revHapus,state:'edit',
+    povs:[[9,99]],rlat:9,rlon:99}]},sa));
+  ok(lama.accepted.length===0,'penyimpanan biasa ditolak');
+  ok(lama.conflicts.length===1&&lama.conflicts[0].alasan==='terhapus','ditolak dengan alasan terhapus');
+  ch=c(Object.assign({op:'pull',since:0},sa)).changes.find(x=>x.id==='H-1');
+  ok(ch.state==='hapus'&&ch.povs.length===2,'titik tetap terhapus & isinya utuh');
+
+  console.log('\npemulihan yang disengaja');
+  const pulih=c(Object.assign({op:'push',items:[{id:'H-1',baseRev:revHapus,state:'edit',
+    undelete:true,povs:[[1.1,104.1],[1.2,104.2,2]],rlat:1,rlon:104}]},sa));
+  ok(pulih.accepted.length===1,'pemulihan diterima');
+  ch=c(Object.assign({op:'pull',since:0},sa)).changes.find(x=>x.id==='H-1');
+  ok(ch.state==='edit','kembali aktif');
+  ok(ch.povs.length===2,'POV kembali lengkap seperti sebelum dihapus');
+
+  console.log('\njejak di sheet log');
+  const log=g.sheets.log.getRange(1,1,g.sheets.log.getLastRow(),5).getValues();
+  const aksi=log.slice(1).filter(l=>l[2]==='H-1').map(l=>l[3]);
+  ok(aksi.indexOf('hapus titik')>=0,'penghapusan tercatat');
+  ok(aksi.indexOf('pulihkan titik')>=0,'pemulihan tercatat');
+
+  console.log('\nversi protokol dikabarkan ke klien');
+  ok(c(Object.assign({op:'hello'},bu)).ver===2,'hello membawa versi');
+  ok(c(Object.assign({op:'pull',since:0},bu)).ver===2,'pull membawa versi');
+}
+
 console.log(`\n${pass} lulus, ${fail} gagal\n`);
 process.exit(fail ? 1 : 0);

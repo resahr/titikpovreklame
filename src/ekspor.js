@@ -11,6 +11,7 @@ function barisDetail() {
                 'reklame_lat', 'reklame_lon', 'pov_ke', 'pov_lat', 'pov_lon',
                 'jarak_m', 'status', 'perlu_dicek']];
   data.forEach(r => {
+    if (r.del) return;                 /* titik terhapus tidak ikut diekspor */
     if (!r.povs.length) {
       out.push([r.id, r.jenis, r.tipe, r.jalan, r.kel, r.kec, r.prio, r.rlat, r.rlon,
                 '', '', '', '', 'tanpa POV', '']);
@@ -37,7 +38,28 @@ function barisDetail() {
 function barisRingkas() {
   const out = [['id_reklame', 'jenis', 'tipe', 'jalan', 'jarak_median_m']];
   data.forEach(r => {
+    if (r.del) return;                 /* titik terhapus tidak ikut diekspor */
     out.push([r.id, r.jenis, r.tipe, r.jalan, r.povs.length ? r.median : '']);
+  });
+  return out;
+}
+
+/**
+ * Sheet 3 — daftar titik yang ditandai terhapus, lengkap dengan siapa
+ * dan kapan. Hanya muncul kalau memang ada yang dihapus.
+ *
+ * Penghapusan tidak membuang apa pun: POV-nya masih tersimpan di server
+ * dan titiknya bisa dipulihkan lewat filter "Terhapus" di aplikasi.
+ * Sheet ini ada supaya penghapusan tetap bisa ditelusuri di luar aplikasi.
+ */
+function barisDihapus() {
+  const out = [['id_reklame', 'jenis', 'tipe', 'jalan', 'kecamatan',
+                'jumlah_pov_tersimpan', 'jarak_median_m', 'dihapus_oleh', 'waktu']];
+  data.forEach(r => {
+    if (!r.del) return;
+    out.push([r.id, r.jenis, r.tipe, r.jalan, r.kec,
+              r.povs.length, r.povs.length ? r.median : '',
+              r.by || '', (r.at || '').replace('T', ' ').slice(0, 16)]);
   });
   return out;
 }
@@ -74,11 +96,20 @@ function exportXLSX() {
   wsS['!freeze'] = { xSplit: 0, ySplit: 1 };
   XLSX.utils.book_append_sheet(wb, wsS, 'Ringkas');
 
+  const h = barisDihapus();
+  if (h.length > 1) {
+    const wsH = XLSX.utils.aoa_to_sheet(h);
+    wsH['!cols'] = lebarKolom(h, 34);
+    wsH['!freeze'] = { xSplit: 0, ySplit: 1 };
+    XLSX.utils.book_append_sheet(wb, wsH, 'Dihapus');
+  }
+
   XLSX.writeFile(wb, `POV_reklame_${stamp()}.xlsx`);
 
-  const berPOV = data.filter(r => r.povs.length).length;
+  const berPOV = data.filter(r => !r.del && r.povs.length).length;
   toast(`Excel tersimpan — ${nf(d.length - 1)} baris POV, ` +
-        `${nf(s.length - 1)} titik (${nf(berPOV)} ber-POV)`);
+        `${nf(s.length - 1)} titik (${nf(berPOV)} ber-POV)` +
+        (h.length > 1 ? ` · ${nf(h.length - 1)} terhapus di sheet terpisah` : ''));
 }
 
 $('btnXLSX').onclick = exportXLSX;
