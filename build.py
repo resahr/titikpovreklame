@@ -75,11 +75,52 @@ DATASET_RE = re.compile(
     r'(<script id="dataset" type="application/json">)(.*?)(</script>)', re.S)
 
 
+ATRIB_TABEL = 'Titik_Reklame_Terbaru'
+
+
+def bangun_atribut(gpkg):
+    """data/atribut.json — 172 kolom persis seperti berkas survei awal.
+
+    Dipakai HANYA saat tombol ekspor Excel ditekan, jadi berkas 4,5 MB ini
+    tidak pernah memberatkan pemuatan peta.
+
+    `longitude`/`latitude` tidak ada di tabel GPKG; di CSV asli keduanya
+    ada di paling belakang dan nilainya sama dengan LONG_DISP/LAT_DISP
+    (sudah diperiksa: 2420/2420 cocok dengan koordinat yang dipakai
+    aplikasi, sementara `geom` hanya versi presisi penuhnya — beda
+    maksimum 0,1 m). Jadi keduanya diturunkan dari LONG_DISP/LAT_DISP.
+    """
+    if not os.path.exists(gpkg):
+        print(f'  data/atribut.json  DILEWATI — {os.path.basename(gpkg)} tidak ada')
+        return
+    import sqlite3
+    db = sqlite3.connect(gpkg)
+    cols = [r[1] for r in db.execute(f"SELECT * FROM pragma_table_info('{ATRIB_TABEL}')")
+            if r[1] not in ('fid', 'geom')]
+    iLon = cols.index('LONG_DISP')
+    iLat = cols.index('LAT_DISP')
+    iId  = cols.index('ID_TITIK')
+    rows = []
+    for r in db.execute(f'SELECT {",".join(chr(34)+c+chr(34) for c in cols)} FROM {ATRIB_TABEL}'):
+        v = ['' if x is None else x for x in r]
+        rows.append(v + [v[iLon], v[iLat]])
+    keluar = {'cols': cols + ['longitude', 'latitude'], 'idIdx': iId, 'rows': rows}
+    os.makedirs(os.path.join(HERE, 'data'), exist_ok=True)
+    dp = os.path.join(HERE, 'data', 'atribut.json')
+    with open(dp, 'w', encoding='utf-8') as f:
+        json.dump(keluar, f, ensure_ascii=False, separators=(',', ':'))
+    gz = len(gzip.compress(open(dp, 'rb').read()))
+    print(f'  data/atribut.json  {len(rows)} titik · {len(keluar["cols"])} kolom · '
+          f'{os.path.getsize(dp)/1048576:.1f} MB · {gz/1024:.0f} KB ter-gzip')
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--mockup', default=DEFAULT_MOCKUP)
     ap.add_argument('--api-url', default=None)
     ap.add_argument('--out', default=os.path.join(HERE, 'index.html'))
+    ap.add_argument('--gpkg', default=os.path.join(HERE, '..', 'Titik_Reklame_Terbaru.gpkg'),
+                    help='sumber 170 kolom atribut untuk sheet "Data Lengkap"')
     a = ap.parse_args()
 
     cfg = json.load(open(CFG)) if os.path.exists(CFG) else {}
@@ -116,6 +157,8 @@ def main():
               f'{sum(len(r["povs"]) for r in out)} POV')
     else:
         print('  dataset mockup sudah kosong — data/titik.json dibiarkan')
+
+    bangun_atribut(a.gpkg)
 
     # kosongkan tag dataset (tetap ada: dipakai fitur "Simpan HTML")
     html = DATASET_RE.sub(lambda mm: mm.group(1) + '\n' + mm.group(3), html, count=1)
