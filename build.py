@@ -234,6 +234,18 @@ def main():
     html = sub_once(html, RESET_OLD, RESET_NEW, 'tombol muat ulang')
     html = sub_once(html, BTN_OLD, BTN_NEW, 'label tombol')
 
+    # Lapisan peta dasar diberi nama supaya src/peta.js bisa menggantinya.
+    html = sub_once(
+        html,
+        "L.tileLayer('https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',\n"
+        "{maxZoom:21,subdomains:['mt0','mt1','mt2','mt3'],"
+        "attribution:'&copy; Google Satellite'}).addTo(map);",
+        "/* Bisa diganti satelit / peta jalan — lihat src/peta.js */\n"
+        "const petaDasar=L.tileLayer('https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',\n"
+        "{maxZoom:21,subdomains:['mt0','mt1','mt2','mt3'],"
+        "attribution:'&copy; Google'}).addTo(map);",
+        'lapisan peta dasar dinamai')
+
     # Titik yang DITAMBAHKAN pemakai diberi warna sendiri di peta ikhtisar,
     # supaya langsung terbedakan dari 2.420 titik hasil survei.
     html = sub_once(
@@ -244,11 +256,12 @@ def main():
 
     ekspor = read(os.path.join(SRC, 'ekspor.js'))
     tambah = read(os.path.join(SRC, 'tambah.js'))
+    peta   = read(os.path.join(SRC, 'peta.js'))
     collab = read(os.path.join(SRC, 'collab.js')).replace('__API_URL__', api_url)
     # tambah.js sebelum collab.js: pemasangan UI-nya harus sudah jalan
     # sebelum boot() di akhir collab.js memuat data.
-    html = sub_once(html, INIT_OLD, ekspor + '\n' + tambah + '\n' + collab,
-                    'sisip modul ekspor + tambah titik + kolaborasi')
+    html = sub_once(html, INIT_OLD, ekspor + '\n' + peta + '\n' + tambah + '\n' + collab,
+                    'sisip modul ekspor + peta dasar + tambah titik + kolaborasi')
 
     with open(a.out, 'w', encoding='utf-8') as f:
         f.write(html)
