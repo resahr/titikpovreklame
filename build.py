@@ -188,8 +188,11 @@ def main():
         '<button class="btn" id="btnCSV">Simpan CSV</button>',
         '<button class="btn" id="btnCSV">Simpan CSV</button>\n'
         '<button class="btn" id="btnXLSX" title="Excel dua sheet: rincian tiap POV, '
-        'dan ringkasan jarak median per titik">Simpan Excel</button>',
-        'tombol Simpan Excel')
+        'dan ringkasan jarak median per titik">Simpan Excel</button>\n'
+        '<button class="btn" id="btnPDF" title="PDF satu halaman per titik: mini-peta, '
+        'tabel POV, atribut, dan foto survei. Mengikuti filter yang sedang aktif.">'
+        'Simpan PDF</button>',
+        'tombol Simpan Excel + PDF')
 
     # CSV lama ikut mengecualikan titik terhapus, supaya sejalan dengan Excel
     html = sub_once(
@@ -257,11 +260,13 @@ def main():
     ekspor = read(os.path.join(SRC, 'ekspor.js'))
     tambah = read(os.path.join(SRC, 'tambah.js'))
     peta   = read(os.path.join(SRC, 'peta.js'))
+    pdf    = read(os.path.join(SRC, 'pdf.js'))
     collab = read(os.path.join(SRC, 'collab.js')).replace('__API_URL__', api_url)
     # tambah.js sebelum collab.js: pemasangan UI-nya harus sudah jalan
     # sebelum boot() di akhir collab.js memuat data.
-    html = sub_once(html, INIT_OLD, ekspor + '\n' + peta + '\n' + tambah + '\n' + collab,
-                    'sisip modul ekspor + peta dasar + tambah titik + kolaborasi')
+    html = sub_once(html, INIT_OLD,
+                    ekspor + '\n' + pdf + '\n' + peta + '\n' + tambah + '\n' + collab,
+                    'sisip modul ekspor + PDF + peta dasar + tambah titik + kolaborasi')
 
     with open(a.out, 'w', encoding='utf-8') as f:
         f.write(html)
