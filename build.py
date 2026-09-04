@@ -191,9 +191,21 @@ def main():
     html = sub_once(html, RESET_OLD, RESET_NEW, 'tombol muat ulang')
     html = sub_once(html, BTN_OLD, BTN_NEW, 'label tombol')
 
+    # Titik yang DITAMBAHKAN pemakai diberi warna sendiri di peta ikhtisar,
+    # supaya langsung terbedakan dari 2.420 titik hasil survei.
+    html = sub_once(
+        html,
+        "    const c=r.fl?'#e0703b':(r.n?'#c8e64f':'#7d8a80');",
+        "    const c=r.baru?'#9b6cf0':(r.fl?'#e0703b':(r.n?'#c8e64f':'#7d8a80'));",
+        'warna titik tambahan')
+
     ekspor = read(os.path.join(SRC, 'ekspor.js'))
+    tambah = read(os.path.join(SRC, 'tambah.js'))
     collab = read(os.path.join(SRC, 'collab.js')).replace('__API_URL__', api_url)
-    html = sub_once(html, INIT_OLD, ekspor + '\n' + collab, 'sisip modul ekspor + kolaborasi')
+    # tambah.js sebelum collab.js: pemasangan UI-nya harus sudah jalan
+    # sebelum boot() di akhir collab.js memuat data.
+    html = sub_once(html, INIT_OLD, ekspor + '\n' + tambah + '\n' + collab,
+                    'sisip modul ekspor + tambah titik + kolaborasi')
 
     with open(a.out, 'w', encoding='utf-8') as f:
         f.write(html)

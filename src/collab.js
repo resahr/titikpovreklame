@@ -11,7 +11,7 @@
 
 /* Diisi saat pemasangan — lihat README.md langkah 5. */
 const API_URL = '__API_URL__';
-const APP_VERSION = 2;    // harus sama dengan APP_VER di apps-script/Code.gs
+const APP_VERSION = 3;    // harus sama dengan APP_VER di apps-script/Code.gs
 
 const POLL_MS  = 10000;   /* selang tarik perubahan dari server   */
 const PUSH_MS  = 1200;    /* tunda kirim setelah berhenti mengedit */
@@ -26,8 +26,10 @@ const SYNC = {
   srvState: Object.create(null),  /* id -> status terakhir di server        */
   gagalMasuk: '',                /* alasan kegagalan masuk terakhir        */
   usang: false,                   /* true bila server memakai versi lebih baru */
+  serverVer: 0,                   /* versi protokol yang dipakai server        */
   badCode: 0,                     /* berapa kali beruntun server menolak kode  */
   perluRender: false,             /* status hapus berubah -> daftar wajib disusun ulang */
+  perluFilter: false,             /* ada titik baru -> daftar pilihan filter wajib diulang */
   pushT:null, pollT:null, sending:false, lastOk:0, fails:0
 };
 
@@ -288,8 +290,17 @@ async function firstSync(){
 /* ───────────── terapkan perubahan dari server ───────────── */
 
 function applyRemote(ch){
-  const i = data.findIndex(x => x.id === ch.id);
-  if (i < 0) return;
+  let i = data.findIndex(x => x.id === ch.id);
+  if (i < 0) {
+    /* Titik yang ditambahkan rekan: tidak ada di data dasar, jadi harus
+       disusun dari `meta` yang ikut dikirim server. Tanpa meta tidak ada
+       yang bisa dibuat — abaikan saja daripada menebak. */
+    if (!ch.meta || !ch.meta.baru) return;
+    buatTitik(ch.id, ch.meta, ch.rlat, ch.rlon, ch.povs);
+    i = data.length - 1;
+    SYNC.perluRender = true;
+    SYNC.perluFilter = true;
+  }
   SYNC.base[ch.id] = ch.rev;
 
   /* Jangan rebut titik yang sedang saya edit dan belum terkirim —
@@ -367,6 +378,15 @@ async function pushNow(){
     /* Server menolak menghidupkan titik terhapus lewat penyimpanan biasa.
        Hanya pemulihan yang disengaja yang boleh, dan itu ditandai di sini. */
     if (state !== 'hapus' && SYNC.srvState[id] === 'hapus') it.undelete = true;
+
+    /* Titik tambahan: atributnya tidak ada di data dasar, jadi harus ikut
+       dikirim. Penanda `baru` hanya pada pengiriman PERTAMA — sesudah
+       server mengenalnya, penanda itu justru akan ditolak sebagai id kembar. */
+    if (r.baru) {
+      it.meta = { tipe: r.tipe, jenis: r.jenis, jalan: r.jalan,
+                  kel: r.kel, kec: r.kec, prio: r.prio, baru: true };
+      if (!SYNC.base[id]) it.baru = true;
+    }
     return it;
   }).filter(Boolean);
 
@@ -438,6 +458,7 @@ async function pollNow(){
       const others = res.changes.filter(c => c.editor !== SYNC.name);
       res.changes.forEach(applyRemote);
       SYNC.rev = res.rev;
+      if (SYNC.perluFilter) { SYNC.perluFilter = false; buildFilters(); }
       if (SYNC.perluRender) { SYNC.perluRender = false; render(); }
       else { drawOverview(); updateStats(); updateFoot(); }
       if (others.length) {
@@ -464,8 +485,14 @@ function saveDrafts(){
     const ids = queueIds().slice(0, DRAFT_MAX), out = {};
     ids.forEach(id => {
       const r = byId(id);
-      if (r) out[id] = { ed: r.ed, rlat: r.rlat, rlon: r.rlon,
-                         povs: r.povs.map(povOut), base: SYNC.base[id] || 0 };
+      if (!r) return;
+      out[id] = { ed: r.ed, rlat: r.rlat, rlon: r.rlon,
+                  povs: r.povs.map(povOut), base: SYNC.base[id] || 0 };
+      if (r.del) out[id].del = true;
+      /* Titik tambahan belum ada di data dasar: tanpa atributnya, draf ini
+         tidak bisa dipulihkan sama sekali setelah tab ditutup. */
+      if (r.baru) out[id].meta = { tipe: r.tipe, jenis: r.jenis, jalan: r.jalan,
+                                   kel: r.kel, kec: r.kec, prio: r.prio, baru: true };
     });
     if (Object.keys(out).length) localStorage.setItem(LSK.draft, JSON.stringify(out));
     else localStorage.removeItem(LSK.draft);
@@ -478,17 +505,24 @@ function restoreDrafts(){
   if (!raw) return 0;
   let d; try { d = JSON.parse(raw); } catch (e) { return 0; }
 
-  let n = 0;
+  let n = 0, adaBaru = false;
   Object.keys(d).forEach(id => {
-    const i = data.findIndex(x => x.id === id);
-    if (i < 0) return;
+    let i = data.findIndex(x => x.id === id);
+    if (i < 0) {
+      if (!d[id].meta) return;                 /* bukan titik tambahan — lewati */
+      buatTitik(id, d[id].meta, d[id].rlat, d[id].rlon, []);
+      i = data.length - 1;
+      adaBaru = true;
+    }
     const r = data[i];
     r.povs = (d[id].povs || []).map(povIn);
     r.rlat = d[id].rlat; r.rlon = d[id].rlon; r.ed = d[id].ed;
+    r.del  = d[id].del === true;
     recalc(r); syncFiltered(r);
     SYNC.queue[id] = true;
     n++;
   });
+  if (adaBaru) buildFilters();
   return n;
 }
 
@@ -630,7 +664,13 @@ cardHTML = function (r) {
    sendiri begitu aman — tidak ada pekerjaan yang hilang.            */
 
 function cekVersi(res){
-  if (!res || !res.ver || res.ver === APP_VERSION || SYNC.usang) return;
+  if (!res || !res.ver) return;
+  SYNC.serverVer = res.ver;
+  /* Hanya server yang LEBIH BARU yang boleh memicu muat ulang. Kalau
+     dibandingkan dengan `!==`, halaman yang terbit lebih dulu daripada
+     backend-nya akan memuat ulang berulang-ulang selama jeda penerbitan —
+     GitHub Pages masih menyajikan versi lama sampai ±10 menit. */
+  if (res.ver <= APP_VERSION || SYNC.usang) return;
   SYNC.usang = true;
   setSync('off', 'Versi baru tersedia — halaman akan dimuat ulang sendiri');
   const coba = () => {

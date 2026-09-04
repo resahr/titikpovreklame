@@ -26,7 +26,7 @@ var CLAIM_TTL_MS = 150000;  // kunci titik kedaluwarsa 2,5 menit tanpa heartbeat
 var LOCK_WAIT_MS = 25000;
 var MAX_LOG_ROWS = 20000;   // log dipangkas otomatis di atas ini
 
-var APP_VER = 2;            // dinaikkan tiap kali protokol berubah
+var APP_VER = 3;            // dinaikkan tiap kali protokol berubah
 var P = PropertiesService.getScriptProperties();
 
 // ─────────────────────────── pemasangan ───────────────────────────
@@ -82,7 +82,7 @@ function getSS_() {
 function setup() {
   var ss = getSS_();
 
-  ensureSheet_(ss, SH_EDITS,    ['id','rev','state','povs','rlat','rlon','editor','updated']);
+  ensureSheet_(ss, SH_EDITS,    ['id','rev','state','povs','rlat','rlon','editor','updated','meta']);
   ensureSheet_(ss, SH_PRESENCE, ['editor','titik','ts']);
   ensureSheet_(ss, SH_LOG,      ['waktu','editor','id','aksi','detail']);
 
@@ -271,7 +271,7 @@ function opPull_(since, name, claim) {
     var sh = ss.getSheetByName(SH_EDITS);
     var last = sh.getLastRow();
     if (last > 1) {
-      var vals = sh.getRange(2, 1, last - 1, 8).getValues();
+      var vals = sh.getRange(2, 1, last - 1, KOL).getValues();
       for (var i = 0; i < vals.length; i++) {
         var v = vals[i];
         if (!v[0]) continue;
@@ -284,7 +284,8 @@ function opPull_(since, name, claim) {
           rlat:    v[4] === '' ? null : Number(v[4]),
           rlon:    v[5] === '' ? null : Number(v[5]),
           editor:  String(v[6] || ''),
-          updated: String(v[7] || '')
+          updated: String(v[7] || ''),
+          meta:    v[8] ? JSON.parse(v[8]) : null
         });
       }
       changes.sort(function (a, b) { return a.rev - b.rev; });
@@ -327,7 +328,7 @@ function opPush_(items, name) {
     // Peta id -> {baris, rev} untuk pemeriksaan bentrok.
     var index = {}, vals = [];
     if (last > 1) {
-      vals = sh.getRange(2, 1, last - 1, 8).getValues();
+      vals = sh.getRange(2, 1, last - 1, KOL).getValues();
       for (var i = 0; i < vals.length; i++) {
         if (vals[i][0]) index[String(vals[i][0])] = { row: i + 2, rev: Number(vals[i][1]), i: i };
       }
@@ -356,13 +357,30 @@ function opPush_(items, name) {
         continue;
       }
 
+      /* Titik BARU yang id-nya sudah dipakai orang lain: tolak dengan
+         alasan yang jelas, jangan sampai menimpa titik milik orang itu. */
+      if (it.baru === true && cur) {
+        conflicts.push({ id: id, alasan: 'id_dipakai', server: rowKeServer_(vals[cur.i]) });
+        continue;
+      }
+
       if (serverRev > baseRev) {
         conflicts.push({ id: id, alasan: 'basi', server: rowKeServer_(vals[cur.i]) });
         continue;
       }
 
-      var rev   = bumpRev_();
+      var rev = bumpRev_();
+
+      var metaLama = cur && vals[cur.i][8] ? JSON.parse(vals[cur.i][8]) : null;
+      var meta     = normMeta_(it.meta) || metaLama;
+      if (meta && metaLama && metaLama.baru) meta.baru = true;   /* tidak bisa dicabut */
+      var titikBaru = !!(meta && meta.baru);
+
       var state = (it.state === 'orig' || it.state === 'hapus') ? it.state : 'edit';
+      /* 'orig' berarti "kembalikan ke data survei" — titik tambahan tidak
+         punya data survei, jadi mengosongkannya hanya akan membuang
+         koordinat dan atributnya. */
+      if (titikBaru && state === 'orig') state = 'edit';
 
       // Hanya 'orig' yang mengosongkan isi (kembali ke data survei).
       // 'hapus' TETAP menyimpan POV dan koordinatnya, supaya titik yang
@@ -374,10 +392,11 @@ function opPush_(items, name) {
         kosong ? '' : JSON.stringify(povs),
         kosong ? '' : num6_(it.rlat),
         kosong ? '' : num6_(it.rlon),
-        name, stampIso
+        name, stampIso,
+        meta ? JSON.stringify(meta) : ''
       ];
 
-      if (cur) sh.getRange(cur.row, 1, 1, 8).setValues([row]);
+      if (cur) sh.getRange(cur.row, 1, 1, KOL).setValues([row]);
       else     appends.push(row);
 
       // Perbarui indeks supaya item ganda dalam satu batch tetap konsisten.
@@ -385,15 +404,16 @@ function opPush_(items, name) {
       if (cur) { vals[cur.i] = row; }
 
       accepted.push({ id: id, rev: rev });
-      var aksi = state === 'orig'  ? 'kembalikan'
-               : state === 'hapus' ? 'hapus titik'
+      var aksi = it.baru === true  ? 'tambah titik'
+               : state === 'orig'   ? 'kembalikan'
+               : state === 'hapus'  ? 'hapus titik'
                : (it.undelete === true ? 'pulihkan titik' : 'simpan');
       logs.push([stampIso, name, id, aksi,
                  state === 'orig' ? 'dikembalikan ke data survei' : povs.length + ' POV']);
     }
 
     if (appends.length) {
-      sh.getRange(sh.getLastRow() + 1, 1, appends.length, 8).setValues(appends);
+      sh.getRange(sh.getLastRow() + 1, 1, appends.length, KOL).setValues(appends);
     }
     if (logs.length) writeLog_(ss, logs);
 
@@ -459,6 +479,8 @@ function touchPresence_(ss, name, claim) {
  * hijau/oranye/biru pada POV di peta.
  */
 /** Bentuk satu baris sheet `edits` menjadi objek yang dikirim ke klien. */
+var KOL = 9;                /* lebar baris sheet edits, termasuk kolom meta */
+
 function rowKeServer_(v) {
   return {
     rev:     Number(v[1]),
@@ -467,8 +489,26 @@ function rowKeServer_(v) {
     rlat:    v[4] === '' ? null : Number(v[4]),
     rlon:    v[5] === '' ? null : Number(v[5]),
     editor:  String(v[6] || ''),
-    updated: String(v[7] || '')
+    updated: String(v[7] || ''),
+    meta:    v[8] ? JSON.parse(v[8]) : null
   };
+}
+
+/* Atribut titik yang DITAMBAHKAN pemakai. Titik hasil survei asli tidak
+   punya ini — atributnya sudah ada di data/titik.json. Sekali tersimpan,
+   meta tidak pernah dihapus, supaya titik tambahan tidak kehilangan
+   identitasnya kalau ada klien lama yang menyimpan tanpa menyertakannya. */
+var META_FIELD = ['tipe', 'jenis', 'jalan', 'kel', 'kec', 'prio'];
+
+function normMeta_(m) {
+  if (!m || typeof m !== 'object') return null;
+  var out = {};
+  for (var i = 0; i < META_FIELD.length; i++) {
+    var k = META_FIELD[i];
+    out[k] = String(m[k] == null ? '' : m[k]).replace(/[\x00-\x1f]/g, '').trim().slice(0, 80);
+  }
+  out.baru = m.baru === true;
+  return out;
 }
 
 function normPovs_(povs) {

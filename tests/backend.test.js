@@ -7,6 +7,7 @@
  */
 'use strict';
 const path = require('path');
+const fs   = require('fs');
 
 /* ───────── backend asli di atas layanan Google tiruan ───────── */
 const { load } = require('./fake-google');
@@ -212,8 +213,16 @@ console.log('\nhapus titik — hasil kerja TIDAK ikut terbuang');
   ok(aksi.indexOf('pulihkan titik')>=0,'pemulihan tercatat');
 
   console.log('\nversi protokol dikabarkan ke klien');
-  ok(c(Object.assign({op:'hello'},bu)).ver===2,'hello membawa versi');
-  ok(c(Object.assign({op:'pull',since:0},bu)).ver===2,'pull membawa versi');
+  /* Angkanya sengaja TIDAK dipaku di sini. Yang penting APP_VER di server
+     dan APP_VERSION di klien selalu sama: kalau melenceng, cekVersi() akan
+     menyuruh setiap tab memuat ulang terus-menerus. */
+  const verServer = Number(/var APP_VER\s*=\s*(\d+)/.exec(
+    fs.readFileSync(path.join(__dirname,'..','apps-script','Code.gs'),'utf8'))[1]);
+  const verKlien = Number(/const APP_VERSION\s*=\s*(\d+)/.exec(
+    fs.readFileSync(path.join(__dirname,'..','src','collab.js'),'utf8'))[1]);
+  ok(verServer===verKlien,`APP_VER server (${verServer}) = APP_VERSION klien (${verKlien})`);
+  ok(c(Object.assign({op:'hello'},bu)).ver===verServer,'hello membawa versi');
+  ok(c(Object.assign({op:'pull',since:0},bu)).ver===verServer,'pull membawa versi');
 }
 
 
