@@ -138,6 +138,13 @@ async function cdpTarget(url) {
   const C = await cdpTarget(`http://localhost:${PORT_A}/index.test.html`);
   await C.send('Runtime.enable');
   await C.waitFor('typeof data!=="undefined" && data.length===2420', 'data tab C');
+  /* Tab ini berbagi localStorage dengan tab A, jadi masuk otomatis sudah
+     menyambungkannya. Bersihkan dulu supaya yang diuji benar-benar orang
+     luar tanpa kredensial, bukan sesi sah yang kebetulan sudah masuk. */
+  await C.eval('localStorage.clear(); location.reload(); true');
+  await new Promise(r => setTimeout(r, 1500));
+  await C.waitFor('typeof data!=="undefined" && data.length===2420', 'data tab C setelah bersih');
+  await C.waitFor('document.getElementById("gate").hidden===false', 'gerbang tab C');
   await C.eval(`document.getElementById('gateName').value='Penyusup';
                 document.getElementById('gateCode').value='SALAH-SEKALI';
                 gateSubmit(); true`);

@@ -26,6 +26,7 @@ const SYNC = {
   srvState: Object.create(null),  /* id -> status terakhir di server        */
   gagalMasuk: '',                /* alasan kegagalan masuk terakhir        */
   usang: false,                   /* true bila server memakai versi lebih baru */
+  badCode: 0,                     /* berapa kali beruntun server menolak kode  */
   perluRender: false,             /* status hapus berubah -> daftar wajib disusun ulang */
   pushT:null, pollT:null, sending:false, lastOk:0, fails:0
 };
@@ -131,20 +132,28 @@ function openGate(msg){
  * yang tersendat tidak melempar orang ke halaman login.
  */
 async function masuk(name, code, diam){
+  /* Percobaan masuk yang GAGAL tidak boleh merusak sesi yang sudah jalan:
+     dulu SYNC.name/SYNC.code langsung ditimpa sebelum diverifikasi, jadi
+     salah ketik kode di gerbang membuat sesi yang tadinya sehat ikut
+     ditolak server di polling berikutnya. */
+  const namaLama = SYNC.name, kodeLama = SYNC.code;
   SYNC.name = name; SYNC.code = code;
   const percobaan = diam ? 3 : 1;
+  const pulihkan = () => { SYNC.name = namaLama; SYNC.code = kodeLama; };
 
   for (let i = 1; i <= percobaan; i++) {
     try {
       const res = await api('hello');
       if (!res.ok) {
         /* Kode ditolak: percuma diulang, langsung ke gerbang. */
-        if (res.code === 'BAD_CODE') return false;
+        if (res.code === 'BAD_CODE') { pulihkan(); return false; }
         throw new Error(res.error || 'ditolak');
       }
       localStorage.setItem(LSK.name, name);
       localStorage.setItem(LSK.code, code);
       $('gate').hidden = true;
+      authStrip(false);
+      SYNC.badCode = 0;
       $('meName').textContent = name;
       SYNC.live = true;
       await firstSync();
@@ -158,6 +167,7 @@ async function masuk(name, code, diam){
       }
     }
   }
+  pulihkan();
   return false;
 }
 
@@ -184,6 +194,52 @@ async function gateSubmit(){
   }
 }
 
+/* ───────────── kode akses ditolak di tengah sesi ─────────────
+   Dulu satu jawaban BAD_CODE langsung membuka gerbang login menutupi
+   layar — padahal itu diperiksa di SETIAP polling, jadi satu gangguan
+   sesaat cukup untuk melempar orang keluar saat sedang mengedit.
+
+   Sekarang: pekerjaan diamankan ke draf lokal, dua penolakan pertama
+   dianggap gangguan dan polling dibiarkan menyusul. Kalau memang benar
+   ditolak, yang muncul hanya bilah tipis di atas — pemakai sendiri yang
+   memutuskan kapan memasukkan kode baru.                              */
+const BAD_MAX = 3;
+
+function authStrip(tampil, pesan){
+  let s = document.getElementById('authwarn');
+  if (!s) {
+    if (!tampil) return;
+    s = document.createElement('div');
+    s.id = 'authwarn';
+    s.setAttribute('style',
+      'position:fixed;left:0;right:0;top:0;z-index:9000;display:flex;gap:10px;' +
+      'flex-wrap:wrap;align-items:center;justify-content:center;padding:8px 12px;' +
+      'font-size:13px;background:#7a2e1a;color:#fff;box-shadow:0 2px 8px rgba(0,0,0,.35)');
+    s.innerHTML = '<span id="authmsg"></span>' +
+                  '<button id="authGo" class="btn xs">Masukkan kode akses</button>';
+    document.body.appendChild(s);
+    document.getElementById('authGo').onclick = () => {
+      authStrip(false);
+      openGate('Masukkan kode akses yang berlaku. Pekerjaan Anda tidak hilang.');
+    };
+  }
+  if (pesan) document.getElementById('authmsg').textContent = pesan;
+  s.hidden = !tampil;
+}
+
+function tolakKode(){
+  SYNC.badCode++;
+  saveDrafts();                     /* apa pun yang terjadi, jangan sampai hilang */
+  if (SYNC.badCode < BAD_MAX) {
+    setSync('off', 'Server menolak kode akses — mencoba lagi…');
+    return;                          /* anggap gangguan sesaat; polling menyusul */
+  }
+  stopPolling();
+  SYNC.live = false;
+  setSync('off', `Luring — ${queueIds().length} perubahan tersimpan di perangkat ini`);
+  authStrip(true, 'Kode akses ditolak server. Pekerjaan Anda aman tersimpan di perangkat ini.');
+}
+
 /* ───────────── panggilan API ─────────────
    Content-Type text/plain disengaja: menghindari preflight CORS,
    yang tidak dilayani Apps Script.                              */
@@ -198,11 +254,11 @@ async function api(op, extra){
   if (!r.ok) throw new Error('HTTP ' + r.status);
   const j = await r.json();
   cekVersi(j);
-  if (j && j.code === 'BAD_CODE') {
-    SYNC.live = false;
-    stopPolling();
-    openGate('Kode akses ditolak server. Periksa lagi kodenya.');
-  }
+  /* Kode ditolak DI TENGAH SESI tidak boleh merebut layar orang yang
+     sedang mengedit — lihat tolakKode(). Saat masuk (SYNC.live masih
+     false) penanganannya ada di masuk()/gateSubmit(). */
+  if (j && j.code === 'BAD_CODE') { if (SYNC.live) tolakKode(); }
+  else if (j && j.ok) { SYNC.badCode = 0; authStrip(false); }
   return j;
 }
 
@@ -270,10 +326,18 @@ function applyRemote(ch){
 
 /* ───────────── antre & kirim ───────────── */
 
+/* Dulu baris pertamanya `if (!r || !SYNC.live) return;` — artinya setiap
+   editan yang dibuat saat luring TIDAK diantrekan dan TIDAK didraf sama
+   sekali: terlihat di layar, lalu lenyap tanpa jejak begitu tab ditutup.
+   Antre + draf sekarang SELALU jalan; yang ditunda hanya pengirimannya. */
 function markSync(r){
-  if (!r || !SYNC.live) return;
+  if (!r) return;
   SYNC.queue[r.id] = true;
   saveDrafts();
+  if (!SYNC.live) {
+    setSync('off', `Luring — ${queueIds().length} perubahan tersimpan di perangkat ini`);
+    return;
+  }
   setSync('busy', 'Perubahan menunggu dikirim…');
   clearTimeout(SYNC.pushT);
   SYNC.pushT = setTimeout(pushNow, PUSH_MS);
@@ -647,7 +711,26 @@ $('gateGo').onclick = gateSubmit;
 ['gateName', 'gateCode'].forEach(id =>
   $(id).addEventListener('keydown', e => { if (e.key === 'Enter') gateSubmit(); }));
 
+/* Tombol ini duduk di bilah atas, kecil, dan bersebelahan dengan daftar
+   rekan — sekali tersenggol (apalagi di layar sentuh) gerbang login dulu
+   langsung menutupi layar di tengah mengedit. Sekarang harus disengaja,
+   dan ditolak selama masih ada perubahan yang belum terkirim.          */
+let _keluarArm = false;
+function resetKeluar(){ _keluarArm = false; $('btnKeluar').textContent = 'ganti nama'; }
+
 $('btnKeluar').onclick = () => {
+  const n = queueIds().length;
+  if (n) {
+    toast(`${n} perubahan belum terkirim — tunggu tersimpan dulu sebelum ganti nama`);
+    return;
+  }
+  if (!_keluarArm) {
+    _keluarArm = true;
+    $('btnKeluar').textContent = 'yakin ganti nama?';
+    setTimeout(() => { if (_keluarArm) resetKeluar(); }, 4000);
+    return;
+  }
+  resetKeluar();
   stopPolling(); SYNC.live = false;
   openGate('Masuk lagi dengan nama yang lain.');
 };

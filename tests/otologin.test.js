@@ -141,10 +141,14 @@ async function tab(url) {
   await A.wait('SYNC.live===true', 'otomatis lagi');
   ok(await A.ev('document.getElementById("gate").hidden'), 'kembali mulus tanpa gerbang');
 
-  console.log('\ntombol "ganti nama" tetap berfungsi');
+  console.log('\ntombol "ganti nama" tetap berfungsi, tapi harus disengaja');
+  await A.ev('document.getElementById("btnKeluar").click(); true');
+  await sleep(400);
+  ok(await A.ev('document.getElementById("gate").hidden'),
+     'sentuhan pertama TIDAK membuka gerbang (anti-tersenggol)');
   await A.ev('document.getElementById("btnKeluar").click(); true');
   await sleep(600);
-  ok(!(await A.ev('document.getElementById("gate").hidden')), 'gerbang bisa dibuka sengaja');
+  ok(!(await A.ev('document.getElementById("gate").hidden')), 'sentuhan kedua membukanya');
   ok(!(await A.ev('SYNC.live')), 'sesi dihentikan sampai masuk lagi');
 
   console.log(`\n${pass} lulus, ${fail} gagal\n`);
