@@ -87,10 +87,23 @@ async function tab(url) {
 
   const A = await tab(`http://localhost:${PORT}/index.test.html`);
   await A.wait('typeof data!=="undefined"&&data.length===2420', 'data dasar');
+
+  console.log('\nekspor ditahan sebelum hasil kerja tim selesai dimuat');
+  ok(await A.ev('SYNC.siap===false'), 'belum siap sebelum masuk');
+  await A.ev('exportXLSX(); true');
+  await sleep(600);
+  ok(await A.ev('ATRIBUT===null'), 'XLSX menolak jalan — tidak ada berkas setengah jadi');
+  await A.ev('exportCSV(); true');
+  await sleep(300);
+  ok(/belum|Tunggu/i.test(await A.ev('document.getElementById("toast").textContent') || ''),
+     'CSV juga ditahan dengan alasan yang jelas');
+
   await A.ev(`document.getElementById('gateName').value='Rikrik';
               document.getElementById('gateCode').value=${JSON.stringify(mock.code)};
               gateSubmit(); true`);
   await A.wait('SYNC.live===true', 'masuk');
+  await A.wait('SYNC.siap===true', 'sinkron pertama selesai');
+  ok(true, 'siap setelah sinkron pertama selesai');
 
   console.log('\natribut dimuat hanya saat diminta');
   ok(await A.ev('ATRIBUT===null'), 'belum dimuat saat halaman dibuka (peta tetap ringan)');

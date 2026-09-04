@@ -30,6 +30,7 @@ const SYNC = {
   badCode: 0,                     /* berapa kali beruntun server menolak kode  */
   perluRender: false,             /* status hapus berubah -> daftar wajib disusun ulang */
   perluFilter: false,             /* ada titik baru -> daftar pilihan filter wajib diulang */
+  siap: false,                    /* true setelah sinkron pertama selesai — ekspor menunggunya */
   pushT:null, pollT:null, sending:false, lastOk:0, fails:0
 };
 
@@ -75,6 +76,7 @@ function bootEmbedded(){
   if (!t) return false;
   try {
     bootFrom(JSON.parse(t));
+    SYNC.siap = true;               /* arsip luring: datanya sudah lengkap sejak awal */
     $('collabbar').hidden = true;
     $('gate').hidden = true;
     toast('Berkas arsip — mode luring, perubahan tidak tersinkron');
@@ -279,6 +281,7 @@ async function firstSync(){
   render(); renderPeers();
 
   const n = res.changes.length;
+  SYNC.siap = true;                 /* baru sekarang data tim boleh dianggap lengkap */
   setSyncIdle();
   if (drafts) toast(`${n} editan tim dimuat · ${drafts} perubahan lokal Anda dikirim ulang`);
   else if (n)  toast(`${n} titik hasil editan tim dimuat`);

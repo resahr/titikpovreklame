@@ -6,6 +6,19 @@
    Sheet "Ringkas"     : satu baris per titik reklame, dengan jarak median  */
 
 /** Sheet 1 — satu baris per POV (identik dengan keluaran tombol CSV). */
+/**
+ * Menahan ekspor sampai sinkron pertama selesai. Tanpa ini, menekan tombol
+ * beberapa detik setelah halaman terbuka menghasilkan berkas yang KEHILANGAN
+ * seluruh hasil kerja tim — tanpa peringatan apa pun.
+ */
+function siapEkspor() {
+  if (SYNC.siap) return true;
+  toast(SYNC.live
+    ? 'Tunggu sebentar — hasil kerja tim belum selesai dimuat'
+    : 'Belum tersambung ke server — ekspor sekarang akan kehilangan pekerjaan tim');
+  return false;
+}
+
 function barisDetail() {
   const out = [['id_reklame', 'jenis', 'tipe', 'jalan', 'kelurahan', 'kecamatan', 'prioritas',
                 'reklame_lat', 'reklame_lon', 'pov_ke', 'pov_lat', 'pov_lon',
@@ -163,6 +176,7 @@ async function exportXLSX() {
     return;
   }
   if (!data.length) { toast('Belum ada data untuk diekspor'); return; }
+  if (!siapEkspor()) return;
 
   const tombol = $('btnXLSX');
   tombol.disabled = true;
@@ -219,3 +233,8 @@ async function exportXLSX() {
 }
 
 $('btnXLSX').onclick = exportXLSX;
+
+/* Tombol CSV bawaan mockup kena penjagaan yang sama. */
+const exportCSVAsli = exportCSV;
+exportCSV = function () { if (!siapEkspor()) return; return exportCSVAsli.apply(this, arguments); };
+$('btnCSV').onclick = exportCSV;

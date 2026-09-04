@@ -924,6 +924,19 @@ document.addEventListener('keydown',e=>{
    Sheet "Ringkas"     : satu baris per titik reklame, dengan jarak median  */
 
 /** Sheet 1 — satu baris per POV (identik dengan keluaran tombol CSV). */
+/**
+ * Menahan ekspor sampai sinkron pertama selesai. Tanpa ini, menekan tombol
+ * beberapa detik setelah halaman terbuka menghasilkan berkas yang KEHILANGAN
+ * seluruh hasil kerja tim — tanpa peringatan apa pun.
+ */
+function siapEkspor() {
+  if (SYNC.siap) return true;
+  toast(SYNC.live
+    ? 'Tunggu sebentar — hasil kerja tim belum selesai dimuat'
+    : 'Belum tersambung ke server — ekspor sekarang akan kehilangan pekerjaan tim');
+  return false;
+}
+
 function barisDetail() {
   const out = [['id_reklame', 'jenis', 'tipe', 'jalan', 'kelurahan', 'kecamatan', 'prioritas',
                 'reklame_lat', 'reklame_lon', 'pov_ke', 'pov_lat', 'pov_lon',
@@ -1081,6 +1094,7 @@ async function exportXLSX() {
     return;
   }
   if (!data.length) { toast('Belum ada data untuk diekspor'); return; }
+  if (!siapEkspor()) return;
 
   const tombol = $('btnXLSX');
   tombol.disabled = true;
@@ -1137,6 +1151,11 @@ async function exportXLSX() {
 }
 
 $('btnXLSX').onclick = exportXLSX;
+
+/* Tombol CSV bawaan mockup kena penjagaan yang sama. */
+const exportCSVAsli = exportCSV;
+exportCSV = function () { if (!siapEkspor()) return; return exportCSVAsli.apply(this, arguments); };
+$('btnCSV').onclick = exportCSV;
 
 /* ══════════════════════ TAMBAH TITIK REKLAME ══════════════════════
 
@@ -1421,6 +1440,7 @@ const SYNC = {
   badCode: 0,                     /* berapa kali beruntun server menolak kode  */
   perluRender: false,             /* status hapus berubah -> daftar wajib disusun ulang */
   perluFilter: false,             /* ada titik baru -> daftar pilihan filter wajib diulang */
+  siap: false,                    /* true setelah sinkron pertama selesai — ekspor menunggunya */
   pushT:null, pollT:null, sending:false, lastOk:0, fails:0
 };
 
@@ -1466,6 +1486,7 @@ function bootEmbedded(){
   if (!t) return false;
   try {
     bootFrom(JSON.parse(t));
+    SYNC.siap = true;               /* arsip luring: datanya sudah lengkap sejak awal */
     $('collabbar').hidden = true;
     $('gate').hidden = true;
     toast('Berkas arsip — mode luring, perubahan tidak tersinkron');
@@ -1670,6 +1691,7 @@ async function firstSync(){
   render(); renderPeers();
 
   const n = res.changes.length;
+  SYNC.siap = true;                 /* baru sekarang data tim boleh dianggap lengkap */
   setSyncIdle();
   if (drafts) toast(`${n} editan tim dimuat · ${drafts} perubahan lokal Anda dikirim ulang`);
   else if (n)  toast(`${n} titik hasil editan tim dimuat`);
